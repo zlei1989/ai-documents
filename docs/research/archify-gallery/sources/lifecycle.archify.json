@@ -1,0 +1,85 @@
+{
+  "schema_version": 3,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "任务生命周期",
+    "subtitle": "执行 → 审批 → 成功 / 失败",
+    "output": "lifecycle.html",
+    "locale": "zh-CN"
+  },
+  "mainPath": [
+    "idle",
+    "running",
+    "waiting",
+    "success"
+  ],
+  "states": [
+    {
+      "id": "idle",
+      "type": "start",
+      "label": "待命"
+    },
+    {
+      "id": "running",
+      "type": "active",
+      "label": "执行中",
+      "tag": "worker"
+    },
+    {
+      "id": "waiting",
+      "type": "waiting",
+      "label": "等待审批",
+      "sublabel": "人工卡点"
+    },
+    {
+      "id": "success",
+      "type": "success",
+      "label": "完成"
+    },
+    {
+      "id": "failed",
+      "type": "failure",
+      "label": "失败"
+    },
+    {
+      "id": "timeout",
+      "type": "failure",
+      "label": "超时"
+    }
+  ],
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "running",
+      "label": "start"
+    },
+    {
+      "from": "running",
+      "to": "waiting",
+      "label": "需要审批"
+    },
+    {
+      "from": "waiting",
+      "to": "success",
+      "label": "通过"
+    },
+    {
+      "from": "waiting",
+      "to": "failed",
+      "label": "拒绝",
+      "variant": "dashed"
+    },
+    {
+      "from": "running",
+      "to": "failed",
+      "label": "异常",
+      "variant": "dashed"
+    },
+    {
+      "from": "running",
+      "to": "timeout",
+      "label": "超时",
+      "variant": "dashed"
+    }
+  ]
+}

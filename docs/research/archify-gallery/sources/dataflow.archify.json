@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "推荐特征数据流",
+    "subtitle": "埋点 → 实时清洗 → 特征 → 训练 → 指标",
+    "output": "dataflow.html",
+    "locale": "zh-CN"
+  },
+  "stages": [
+    {
+      "label": "采集"
+    },
+    {
+      "label": "清洗"
+    },
+    {
+      "label": "特征"
+    },
+    {
+      "label": "训练"
+    },
+    {
+      "label": "发布"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "events",
+      "type": "external",
+      "label": "埋点事件",
+      "stage": 0,
+      "row": 0
+    },
+    {
+      "id": "kafka",
+      "type": "messagebus",
+      "label": "Kafka",
+      "sublabel": "实时流",
+      "stage": 1,
+      "row": 0
+    },
+    {
+      "id": "clean",
+      "type": "backend",
+      "label": "清洗作业",
+      "sublabel": "去重 / 补全",
+      "stage": 2,
+      "row": 0
+    },
+    {
+      "id": "feature",
+      "type": "backend",
+      "label": "特征表",
+      "sublabel": "离线 + 实时",
+      "stage": 3,
+      "row": 0
+    },
+    {
+      "id": "model",
+      "type": "backend",
+      "label": "训练任务",
+      "sublabel": "LightGBM",
+      "stage": 4,
+      "row": 0
+    },
+    {
+      "id": "metrics",
+      "type": "database",
+      "label": "指标库",
+      "sublabel": "ClickHouse",
+      "stage": 4,
+      "row": 1
+    }
+  ],
+  "flows": [
+    {
+      "from": "events",
+      "to": "kafka",
+      "label": "JSON"
+    },
+    {
+      "from": "kafka",
+      "to": "clean",
+      "label": "消费"
+    },
+    {
+      "from": "clean",
+      "to": "feature",
+      "label": "写入"
+    },
+    {
+      "from": "feature",
+      "to": "model",
+      "label": "训练样本"
+    },
+    {
+      "from": "model",
+      "to": "metrics",
+      "label": "评估指标",
+      "variant": "dashed"
+    }
+  ]
+}

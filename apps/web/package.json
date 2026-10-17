@@ -1,0 +1,37 @@
+{
+  "name": "@aidocs/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3084",
+    "build": "next build",
+    "start": "next start -p 3084",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aidocs/agents": "workspace:*",
+    "@aidocs/api": "workspace:*",
+    "@aidocs/base": "workspace:*",
+    "@aidocs/contracts": "workspace:*",
+    "@aidocs/core": "workspace:*",
+    "@aidocs/ui": "workspace:*",
+    "lucide-react": "^0.500.0",
+    "next": "^16.2.7",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "swr": "^2.3.0",
+    "zod": "^3.25.76",
+    "@aidocs/archify": "workspace:*"
+  },
+  "devDependencies": {
+    "@next/swc-darwin-arm64": "16.4.2",
+    "@tailwindcss/postcss": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "postcss": "^8.5.0",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.3"
+  }
+}

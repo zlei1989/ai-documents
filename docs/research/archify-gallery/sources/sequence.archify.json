@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "登录请求时序",
+    "subtitle": "客户端 → 网关 → 认证 → 用户库",
+    "output": "sequence.html",
+    "locale": "zh-CN"
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "客户端",
+      "sublabel": "Web"
+    },
+    {
+      "id": "gateway",
+      "type": "backend",
+      "label": "API Gateway",
+      "sublabel": "鉴权 / 限流"
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth Service",
+      "sublabel": "JWT"
+    },
+    {
+      "id": "userdb",
+      "type": "database",
+      "label": "User DB",
+      "sublabel": "PostgreSQL"
+    }
+  ],
+  "messages": [
+    {
+      "from": "client",
+      "to": "gateway",
+      "y": 180,
+      "label": "POST /login",
+      "variant": "emphasis"
+    },
+    {
+      "from": "gateway",
+      "to": "auth",
+      "y": 240,
+      "label": "校验凭据",
+      "variant": "security"
+    },
+    {
+      "from": "auth",
+      "to": "userdb",
+      "y": 300,
+      "label": "查询用户",
+      "note": "按 email 查 users 表"
+    },
+    {
+      "from": "userdb",
+      "to": "auth",
+      "y": 370,
+      "label": "用户记录"
+    },
+    {
+      "from": "auth",
+      "to": "gateway",
+      "y": 430,
+      "label": "签发 JWT",
+      "variant": "return"
+    },
+    {
+      "from": "gateway",
+      "to": "client",
+      "y": 490,
+      "label": "200 + token",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "auth",
+      "from": 240,
+      "to": 430,
+      "type": "security"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+# Glossary
+
+- **Artifact（产物）**：一份沉淀下来的文档，磁盘上是一个文件夹，入口为 `MAIN.md`，同目录可含引用图片、调研资料等附件资源。归属于一个 **Group**。
+- **Group（分组）**：Artifact 的第一级归类。Group 下含多个 Artifact。两层管理：Group → Artifact。
+- **ArtifactType（产物类型）**：教模型如何生成与修改一类 Artifact 的「方法论包」：由系统提示词、所选 Skills、所选 MCP、文件资源组成的集合。创作时随会话注入。
+- **方法论沉淀循环**：在创作 Artifact 过程中可快速跳到该 ArtifactType 的编辑界面调整方法论，再跳回来继续创作的闭环。v1 的第一目标。
+- **消息流（Message Stream）**：创作/修改过程中大模型事件的滚动展示（用户消息、助手文本、工具调用等消息块）。修改完成且文档稳定后收起，让位给文档展示。
+- **Pi**：嵌入式 agent 内核，npm 包 `@earendil-works/pi-coding-agent`（Mario Zechner，原 `@mariozechner/pi-coding-agent`/`pi-mono`，已迁址）。通过其 SDK（`createAgentSession`）在 Node 进程内驱动会话、流式事件、文件工具。
+- **全局配置（Settings）**：模型供应商、存储目录（含 git）、全局 Skills、全局 MCP。ArtifactType 从全局里「引用选择」而不是复制。
+- **MCP 启动器（launcher）**：`npx` / `uvx` / `bunx` / `pipx` / `python3 -m` 这类「先解析一个包、再起真正的 MCP 服务端」的命令。应用为它们单独记一份元数据（示例参数、缺了怎么装、第一次运行会不会现下载包），并让命令解析不只认 PATH —— 还会找 `~/.local/bin`、`/opt/homebrew/bin` 等常见安装目录，命中后把该目录补进子进程的 `PATH`。所以 `uvx` 只需要装好 uv，不要求应用本身是从带这份 PATH 的 shell 启动的。
+- **storageRoot（存储根）**：用户配置的文档存放目录，本身是 git 仓库。内含 `types/<typeName>/{type.yaml,prompt.md,resources/}` 与 `docs/<groupName>/<artifactName>/{meta.yaml,MAIN.md,assets/,research/,会话史}`。
+- **assets/ 与 research/**：Artifact 目录内的两类附件。用户拖入/粘贴的图片、AI 生成的图示落 `assets/`（图示默认 `assets/diagrams/`）；AI 创作时深度查询产出的资料落 `research/`。两者随文档一起 git 版本化。
+- **图示（Diagram）**：文档内的 Archify 图，默认 `assets/diagrams/<slug>.archify.json`（源 IR）与 `<slug>.archify.svg`（海报），在 `MAIN.md` 用标准 Markdown 图片引用。普通 SVG/图片只读展示，不再提供生成或编辑。
+- **Archify 图示编辑器**：创作页的全屏结构编辑器（结构表/JSON + 沙箱 viewer + 实时预览）；保存回 `.archify.json`，海报由服务端重新渲染。
+- **Archify 源/海报/交互版**：`x.archify.json` 是唯一真相；`x.archify.svg` 是内嵌 CSS 的只读海报；`.aidocs/archify/...html` 是可再生成的 viewer 缓存。
+- **Archify 预览桥**：viewer 注入的 postMessage 脚本，让点击节点选中结构表行，选中行时聚焦 viewer 节点。
+- **Archify 实时预览**：编辑器改动后 600ms 防抖，把当前 IR 渲染到 `.aidocs/archify/preview/`，不写源/海报；失败保留 last-good。
+- **Archify 布局体检（Layout lint）**：`validate --layout-json` 拿到渲染器实际几何后，本地检查折点、<12px 贴边、边交叉、标签压节点、字号、同泳道对齐、画布比例与卡片一致性；输出 `{score, summary, issues}`，只提醒不阻塞保存。
+- **Archify 排版（Auto layout）**：architecture 按主路径 L 形摆位、store 放 owner 下方、统一卡片；workflow 补 `width/height`（同 lane 同高、sublabel ≥8px）。新图默认自动排版，更新已有图默认保留坐标；编辑器按钮只改草稿，保存后才落盘。
+- **revision**：Archify 源 JSON 原始字节的 sha256，用于编辑器保存的并发冲突检测与缓存；不写进文件。
+- **资料查询插件（Research）**：给 pi 会话注册三个工具的扩展 —— `research_search`（**多源**检索：`web` 必查，另可选 Crossref / OpenAlex / Europe PMC / PubMed / DOAJ / arXiv / Gutenberg / GBIF / ClinicalTrials / 世界银行 / Eurostat）、`research_fetch`（DeepSeek 抓正文）、`research_save`（把带来源的整理稿写进当前文档的 `research/`）。**默认注入**，没有启用开关；`web` 的 key 复用「模型供应商」里那条 DeepSeek 供应商的 API Key，其余源免 key；接口地址与逐源启停在设置页「资料查询」。
+- **生图插件（Seedream）**：一个 pi 工具 `seedream_image_generation`，覆盖文生图/图生图/多图融合/多参考图/图层拆分/交互编辑/组图/流式/联网搜索。本地参考图先按 **SHA-256** 命名上传到方舟 **Files API**（默认 1 天后过期，复用同一 Base URL/API Key），再用返回的 File ID 交给生图接口；生成图下载到 `assets/images/` 并返回相对路径 Markdown。消息流里以格子展示，可放大、右键加入上下文。配置在「设置 → 模型供应商 → 火山引擎」，详见 [95-seedream.md](docs/spec/95-seedream.md)。
+- **澄清选择（Clarification）**：模型通过 `request_clarification` 工具提出的带选项问题；是否使用、何时使用由模型/类型提示词决定。会话进入 `waiting`，用户选择/跳过后同一轮继续。问题卡与答案写进 `ui.jsonl`。

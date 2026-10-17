@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "边缘网关参考架构",
+    "output": "arch-clean.html",
+    "locale": "zh-CN",
+    "visual_preset": "classic",
+    "animation": "trace",
+    "quality_profile": "showcase"
+  },
+  "layout": {
+    "mode": "grid",
+    "origin": [
+      40,
+      60
+    ],
+    "cols": 4,
+    "gapX": 70,
+    "gapY": 54,
+    "cellW": 150,
+    "cellH": 66
+  },
+  "components": [
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "Auth",
+      "sublabel": "JWT / OIDC",
+      "row": 0,
+      "col": 2,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "客户端 App",
+      "sublabel": "Web / Mobile",
+      "row": 1,
+      "col": 0,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "edge",
+      "type": "cloud",
+      "label": "Edge CDN",
+      "sublabel": "静态与缓存",
+      "row": 1,
+      "col": 1,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "gw",
+      "type": "backend",
+      "label": "API Gateway",
+      "sublabel": "鉴权 / 限流",
+      "row": 1,
+      "col": 2,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "users",
+      "type": "backend",
+      "label": "User Service",
+      "sublabel": "用户",
+      "row": 1,
+      "col": 3,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "orders",
+      "type": "backend",
+      "label": "Order Service",
+      "sublabel": "订单",
+      "row": 2,
+      "col": 2,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "redis",
+      "type": "database",
+      "label": "Redis",
+      "sublabel": "缓存 / 会话",
+      "row": 2,
+      "col": 3,
+      "size": [
+        150,
+        66
+      ]
+    },
+    {
+      "id": "pg",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "主数据",
+      "row": 3,
+      "col": 2,
+      "size": [
+        150,
+        66
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "client",
+      "to": "edge",
+      "label": "HTTPS"
+    },
+    {
+      "from": "edge",
+      "to": "gw",
+      "label": "回源"
+    },
+    {
+      "from": "gw",
+      "to": "auth",
+      "label": "校验 token"
+    },
+    {
+      "from": "gw",
+      "to": "orders",
+      "label": "/orders"
+    },
+    {
+      "from": "gw",
+      "to": "users",
+      "label": "/users"
+    },
+    {
+      "from": "orders",
+      "to": "pg",
+      "label": "读写"
+    },
+    {
+      "from": "users",
+      "to": "redis",
+      "label": "缓存"
+    }
+  ]
+}

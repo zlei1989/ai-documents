@@ -1,0 +1,19 @@
+{
+  "name": "我的文档",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "dev": "pnpm --filter @aidocs/web dev",
+    "build": "pnpm --filter @aidocs/web build",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@aidocs/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aidocs/contracts": "workspace:*",
+    "@aidocs/core": "workspace:*",
+    "zod": "^3.25.76",
+    "@aidocs/agents": "workspace:*",
+    "yaml": "^2.9.0",
+    "@aidocs/archify": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

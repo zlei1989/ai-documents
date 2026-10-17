@@ -1,0 +1,16 @@
+!.env.example
+.DS_Store
+.env*
+.next/
+.playwright-mcp/
+.pnpm-store/
+.smoke/
+.wt/
+*.log
+coverage/
+dist/
+impl/
+node_modules/
+out/
+prototypes/
+wayfinder/

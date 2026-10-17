@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/server/*
+  - packages/client/*
+
+allowBuilds:
+  sharp: true
+  '@tailwindcss/oxide': true
+  unrs-resolver: true
+  '@parcel/watcher': true
+  esbuild: true
+  '@google/genai': true
+  bufferutil: true
+  kerberos: true
+  protobufjs: true
+  utf-8-validate: true

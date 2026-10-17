@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "diagram_type": "waterfall",
+  "meta": {
+    "title": "登录请求耗时",
+    "subtitle": "POST /login · 420ms",
+    "output": "waterfall.html",
+    "locale": "zh-CN",
+    "evidence": "illustrative",
+    "unit": "ms"
+  },
+  "spans": [
+    {
+      "id": "root",
+      "name": "POST /login",
+      "start": 0,
+      "end": 420,
+      "service": "gateway"
+    },
+    {
+      "id": "auth",
+      "name": "认证服务",
+      "start": 20,
+      "end": 180,
+      "parent": "root",
+      "service": "auth"
+    },
+    {
+      "id": "db",
+      "name": "查询用户",
+      "start": 60,
+      "end": 140,
+      "parent": "auth",
+      "service": "postgres"
+    },
+    {
+      "id": "jwt",
+      "name": "签发 JWT",
+      "start": 150,
+      "end": 180,
+      "parent": "auth",
+      "service": "auth"
+    },
+    {
+      "id": "session",
+      "name": "写会话",
+      "start": 200,
+      "end": 260,
+      "parent": "root",
+      "service": "redis",
+      "status": "ok"
+    },
+    {
+      "id": "audit",
+      "name": "审计日志",
+      "start": 260,
+      "end": 400,
+      "parent": "root",
+      "service": "kafka",
+      "status": "ok"
+    }
+  ]
+}

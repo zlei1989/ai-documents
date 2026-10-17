@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "diagram_type": "timeline",
+  "meta": {
+    "title": "发布事故时间线",
+    "subtitle": "2026-10-17 · 应用与基础设施",
+    "output": "timeline.html",
+    "locale": "zh-CN",
+    "evidence": "illustrative",
+    "timezone": "Asia/Shanghai"
+  },
+  "lanes": [
+    {
+      "id": "app",
+      "label": "应用"
+    },
+    {
+      "id": "infra",
+      "label": "基础设施"
+    }
+  ],
+  "events": [
+    {
+      "id": "e1",
+      "at": "2026-10-17T09:00:00+08:00",
+      "title": "发布 v2.3",
+      "lane": "app",
+      "kind": "change"
+    },
+    {
+      "id": "e2",
+      "at": "2026-10-17T09:12:00+08:00",
+      "title": "错误率上升",
+      "lane": "app",
+      "kind": "alert",
+      "detail": "5xx 从 0.2% 到 8%"
+    },
+    {
+      "id": "e3",
+      "at": "2026-10-17T09:18:00+08:00",
+      "title": "回滚开始",
+      "lane": "app",
+      "kind": "action"
+    },
+    {
+      "id": "e4",
+      "at": "2026-10-17T09:26:00+08:00",
+      "title": "回滚完成",
+      "lane": "app",
+      "kind": "recovery"
+    },
+    {
+      "id": "e5",
+      "at": "2026-10-17T09:30:00+08:00",
+      "title": "确认恢复",
+      "lane": "infra",
+      "kind": "recovery"
+    }
+  ]
+}

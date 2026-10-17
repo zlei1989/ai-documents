@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "diagram_type": "erd",
+  "meta": {
+    "title": "电商核心表",
+    "subtitle": "User / Order / Product / OrderItem",
+    "output": "erd.html",
+    "locale": "zh-CN"
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 80,
+    "gapY": 70
+  },
+  "entities": [
+    {
+      "id": "user",
+      "label": "User",
+      "row": 0,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "key": "uk"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamptz"
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "label": "Product",
+      "row": 0,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "price",
+          "type": "numeric"
+        }
+      ]
+    },
+    {
+      "id": "order",
+      "label": "Order",
+      "row": 1,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "key": "fk",
+          "references": "user.id"
+        },
+        {
+          "name": "total",
+          "type": "numeric"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "id": "item",
+      "label": "OrderItem",
+      "row": 1,
+      "col": 1,
+      "attributes": [
+        {
+          "name": "order_id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "product_id",
+          "type": "uuid",
+          "key": "pk"
+        },
+        {
+          "name": "qty",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "user",
+      "to": "order",
+      "fromCardinality": "one",
+      "toCardinality": "many",
+      "label": "下单"
+    },
+    {
+      "from": "order",
+      "to": "item",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    },
+    {
+      "from": "product",
+      "to": "item",
+      "fromCardinality": "one",
+      "toCardinality": "many"
+    }
+  ]
+}

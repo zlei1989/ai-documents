@@ -1,0 +1,21 @@
+{
+  "name": "@aidocs/archify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aidocs/contracts": "workspace:*",
+    "@aidocs/core": "workspace:*",
+    "zod": "^3.25.76",
+    "@xmldom/xmldom": "^0.9.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "diagram_type": "tree",
+  "meta": {
+    "title": "项目模块树",
+    "subtitle": "apps / packages / 文档",
+    "output": "tree.html",
+    "locale": "zh-CN"
+  },
+  "layout": {
+    "direction": "right"
+  },
+  "nodes": [
+    {
+      "id": "root",
+      "label": "ai-documents",
+      "sublabel": "工作台"
+    },
+    {
+      "id": "web",
+      "label": "apps/web",
+      "parent": "root"
+    },
+    {
+      "id": "api",
+      "label": "packages/server",
+      "parent": "root"
+    },
+    {
+      "id": "ui",
+      "label": "packages/client",
+      "parent": "root"
+    },
+    {
+      "id": "routes",
+      "label": "路由 / API",
+      "parent": "web"
+    },
+    {
+      "id": "editor",
+      "label": "Archify 编辑器",
+      "parent": "web"
+    },
+    {
+      "id": "agents",
+      "label": "agents",
+      "parent": "api"
+    },
+    {
+      "id": "archify",
+      "label": "archify",
+      "parent": "api"
+    },
+    {
+      "id": "components",
+      "label": "ui 组件",
+      "parent": "ui"
+    }
+  ]
+}

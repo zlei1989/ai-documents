@@ -1,0 +1,38 @@
+@import 'tailwindcss';
+/* 共享 UI 包在 apps/web 之外，需显式注册，否则 Button 等组件的类名不会生成 */
+@source '../../../packages/client/ui/src';
+
+:root {
+  --background: #fafafa;
+  --foreground: #18181b;
+}
+
+html {
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 13.5px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 数字输入框去掉原生上下步进框（各平台样式不一，且与 32px 高的输入框不匹配） */
+@layer base {
+  input[type='number'] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}

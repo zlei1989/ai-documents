@@ -1,0 +1,161 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "发布流程泳道图",
+    "subtitle": "四段式：提交 → 集成 → 审批 → 部署",
+    "locale": "zh-CN",
+    "visual_preset": "classic",
+    "animation": "trace",
+    "output": "workflow.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "dev",
+      "label": "开发者"
+    },
+    {
+      "id": "ci",
+      "label": "CI 流水线"
+    },
+    {
+      "id": "release",
+      "label": "审批 & 发布"
+    },
+    {
+      "id": "prod",
+      "label": "生产环境"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-commit",
+      "label": "① 提交",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-ci",
+      "label": "② 集成（CI）",
+      "fromCol": 1,
+      "toCol": 2
+    },
+    {
+      "id": "p-approve",
+      "label": "③ 审批",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "security"
+    },
+    {
+      "id": "p-deploy",
+      "label": "④ 部署",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "nodes": [
+    {
+      "id": "commit",
+      "lane": "dev",
+      "col": 0,
+      "type": "frontend",
+      "label": "提交代码",
+      "sublabel": "push 到特性分支",
+      "tag": "起点"
+    },
+    {
+      "id": "trigger",
+      "lane": "ci",
+      "col": 1,
+      "type": "backend",
+      "label": "触发流水线",
+      "sublabel": "webhook 自动拉起任务"
+    },
+    {
+      "id": "build",
+      "lane": "ci",
+      "col": 2,
+      "type": "backend",
+      "label": "构建与测试",
+      "sublabel": "单测 · 集成测试 · 制品签名",
+      "tag": "自动门禁"
+    },
+    {
+      "id": "approve",
+      "lane": "release",
+      "col": 3,
+      "type": "security",
+      "label": "人工审批",
+      "sublabel": "复核变更与回滚方案",
+      "tag": "人工卡点"
+    },
+    {
+      "id": "canary",
+      "lane": "release",
+      "col": 4,
+      "type": "cloud",
+      "label": "灰度发布",
+      "sublabel": "少量流量先跑一段"
+    },
+    {
+      "id": "prod",
+      "lane": "prod",
+      "col": 5,
+      "type": "cloud",
+      "label": "全量上线",
+      "sublabel": "生产集群 · 指标正常",
+      "tag": "终点"
+    }
+  ],
+  "mainPath": [
+    "commit",
+    "trigger",
+    "build",
+    "approve",
+    "canary",
+    "prod"
+  ],
+  "edges": [
+    {
+      "from": "commit",
+      "to": "trigger",
+      "label": "push 事件",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "trigger",
+      "to": "build",
+      "label": "开始执行",
+      "role": "main"
+    },
+    {
+      "from": "build",
+      "to": "approve",
+      "label": "测试全绿 · 制品入库",
+      "variant": "emphasis",
+      "role": "main"
+    },
+    {
+      "from": "approve",
+      "to": "canary",
+      "label": "审批通过",
+      "role": "main"
+    },
+    {
+      "from": "canary",
+      "to": "prod",
+      "label": "观察无异常",
+      "role": "main"
+    },
+    {
+      "from": "build",
+      "to": "commit",
+      "label": "测试失败 · 打回修改",
+      "variant": "dashed",
+      "role": "error"
+    }
+  ]
+}

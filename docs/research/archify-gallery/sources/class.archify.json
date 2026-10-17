@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "diagram_type": "class",
+  "meta": {
+    "title": "服务层类型",
+    "subtitle": "Repository / 领域服务 / 基类",
+    "output": "class.html",
+    "locale": "zh-CN"
+  },
+  "layout": {
+    "mode": "grid",
+    "gapX": 100,
+    "gapY": 50
+  },
+  "types": [
+    {
+      "id": "BaseEntity",
+      "label": "BaseEntity",
+      "kind": "abstract",
+      "row": 0,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "visibility": "protected"
+        }
+      ],
+      "methods": [
+        {
+          "name": "createdAt",
+          "returns": "Date"
+        }
+      ]
+    },
+    {
+      "id": "UserService",
+      "label": "UserService",
+      "kind": "class",
+      "row": 1,
+      "col": 0,
+      "attributes": [
+        {
+          "name": "repo",
+          "type": "Repository<User>"
+        }
+      ],
+      "methods": [
+        {
+          "name": "login",
+          "parameters": "email, password",
+          "returns": "Token"
+        }
+      ]
+    },
+    {
+      "id": "Repository",
+      "label": "Repository",
+      "kind": "interface",
+      "row": 1,
+      "col": 1,
+      "methods": [
+        {
+          "name": "findById",
+          "parameters": "id: uuid",
+          "returns": "T"
+        }
+      ]
+    },
+    {
+      "id": "OrderService",
+      "label": "OrderService",
+      "kind": "class",
+      "row": 2,
+      "col": 1,
+      "methods": [
+        {
+          "name": "place",
+          "parameters": "userId: uuid",
+          "returns": "Order"
+        }
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "from": "UserService",
+      "to": "BaseEntity",
+      "kind": "inheritance"
+    },
+    {
+      "from": "UserService",
+      "to": "Repository",
+      "kind": "dependency",
+      "label": "uses"
+    },
+    {
+      "from": "OrderService",
+      "to": "Repository",
+      "kind": "dependency",
+      "label": "uses"
+    }
+  ]
+}
