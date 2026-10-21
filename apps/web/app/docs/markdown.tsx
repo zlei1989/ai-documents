@@ -1,17 +1,26 @@
 'use client';
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  INLINE_IMAGE_SOURCE,
-  parseInlineImage,
-  parseMarkdown,
-  type Block,
-} from './markdown-parse';
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from 'react';
+import Markdown, { type Components, type ExtraProps } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { archifyPosterViewUrl, assetUrl, normalizeAssetPath } from '../_lib/asset-url';
 
 /**
- * 最小 Markdown 渲染：标题 / 段落 / 列表 / 引用 / 代码块 / 行内 code·粗体·链接 / 本地图片。
- * 不引入重型依赖；图片只渲染 assets/ 下的本地资源，外链不发起网络请求。
+ * Markdown 渲染：react-markdown + remark-gfm 负责解析（CommonMark + GFM 表格/删除线/
+ * 任务列表/脚注/自动链接），本文件只负责把元素映射成站内样式与本地资源策略：
+ * - 图片只渲染 assets/ 下的本地资源，外链不发起网络请求
+ * - Archify 海报保留右键菜单（创作页）与点击打开交互 viewer（只读页）
+ * - 代码块保留语言标签，行内代码/链接/标题等对齐原有视觉
  */
 
 const HEADING_CLASS: Record<number, string> = {
@@ -40,6 +49,12 @@ interface ImageContextValue {
 }
 
 const ImageContext = createContext<ImageContextValue>({});
+
+/** 独占一段的图片用 block 版式（figure + 图题），行内图片保持 inline */
+const StandaloneImageContext = createContext(false);
+
+/** 代码块外层的 <pre> 里，<code> 不应再套行内代码底色 */
+const InPreContext = createContext(false);
 
 function MarkdownImage({
   alt,
@@ -86,7 +101,11 @@ function MarkdownImage({
   }
 
   const archify = path.toLowerCase().endsWith('.archify.svg');
-  const hint = onImageContextMenu && archify ? '右键打开交互图示 / 编辑 JSON' : undefined;
+  const hint = onImageContextMenu
+    ? archify
+      ? '右键复制图片 / 打开交互图示 / 编辑 JSON'
+      : '右键复制图片'
+    : undefined;
   // 海报只读；点击在新标签打开同一张图的交互版
   const viewerHref = archify && openArchifyOnClick && assetBase ? archifyPosterViewUrl(assetBase, path) : null;
 
@@ -151,50 +170,147 @@ function MarkdownImage({
   );
 }
 
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
-  const split = new RegExp(
-    `(${INLINE_IMAGE_SOURCE}|\`[^\`\\n]*\`|\\*\\*[^*\\n]+\\*\\*|\\[[^\\]\\n]+\\]\\([^)\\n]+\\))`,
-    'g',
-  );
-  const parts = text.split(split);
-  return parts.map((part, index) => {
-    const key = `${keyPrefix}-${index}`;
-    if (part.startsWith('![')) {
-      const image = parseInlineImage(part);
-      if (image) {
-        return <MarkdownImage key={key} alt={image.alt} src={image.src} {...(image.title ? { title: image.title } : {})} variant="inline" />;
-      }
-    }
-    if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
-      return (
-        <code key={key} className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.88em] text-zinc-700">
-          {part.slice(1, -1)}
-        </code>
-      );
-    }
-    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
-      return (
-        <strong key={key} className="font-semibold">
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    const link = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part);
-    if (link) {
-      const label = link[1] ?? '';
-      const href = link[2] ?? '';
-      if (/^https?:\/\//.test(href)) {
-        return (
-          <a key={key} href={href} target="_blank" rel="noreferrer" className="text-blue-600 underline underline-offset-2">
-            {label}
-          </a>
-        );
-      }
-      return <span key={key}>{label}</span>;
-    }
-    return <span key={key}>{part}</span>;
-  });
+/** 段落里是否只有一个图片节点（决定用 figure 还是行内图片） */
+function isStandaloneImage(node: ExtraProps['node']): boolean {
+  if (!node || node.type !== 'element') return false;
+  const meaningful = node.children.filter((child) => child.type !== 'text' || child.value.trim() !== '');
+  return meaningful.length === 1 && meaningful[0]?.type === 'element' && meaningful[0].tagName === 'img';
 }
+
+function isExternal(href: string | undefined): boolean {
+  return /^https?:\/\//i.test(href ?? '');
+}
+
+/** 代码块语言：react-markdown 给 <code> 加 language-xxx */
+function languageOf(children: ReactNode): string {
+  const first = Children.toArray(children)[0];
+  if (!isValidElement<{ className?: string }>(first)) return '';
+  return /language-([\w+#.-]+)/.exec(first.props.className ?? '')?.[1] ?? '';
+}
+
+function Pre({ children }: ComponentPropsWithoutRef<'pre'>) {
+  const lang = languageOf(children);
+  return (
+    <pre className="my-3 overflow-x-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
+      {lang ? <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">{lang}</div> : null}
+      <InPreContext.Provider value>{children}</InPreContext.Provider>
+    </pre>
+  );
+}
+
+function Code({ className, children }: ComponentPropsWithoutRef<'code'>) {
+  const inPre = useContext(InPreContext);
+  if (inPre) return <code className={className}>{children}</code>;
+  return (
+    <code className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.88em] text-zinc-700">{children}</code>
+  );
+}
+
+function Paragraph({ node, children }: ComponentPropsWithoutRef<'p'> & ExtraProps) {
+  if (isStandaloneImage(node)) {
+    return <StandaloneImageContext.Provider value>{children}</StandaloneImageContext.Provider>;
+  }
+  return <p className="my-3 whitespace-pre-wrap first:mt-0">{children}</p>;
+}
+
+/** react-markdown 会把 URL 里的非 ASCII 百分号编码；本地路径先还原，避免二次编码 */
+function decodeUrlOnce(value: string): string {
+  try {
+    return decodeURI(value);
+  } catch {
+    return value;
+  }
+}
+
+function Image({ src, alt, title }: ComponentPropsWithoutRef<'img'> & ExtraProps) {
+  const standalone = useContext(StandaloneImageContext);
+  return (
+    <MarkdownImage
+      alt={alt ?? ''}
+      src={typeof src === 'string' ? decodeUrlOnce(src) : ''}
+      {...(title ? { title } : {})}
+      variant={standalone ? 'block' : 'inline'}
+    />
+  );
+}
+
+function Link({ href, children }: ComponentPropsWithoutRef<'a'> & ExtraProps) {
+  if (isExternal(href)) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="text-blue-600 underline underline-offset-2"
+      >
+        {children}
+      </a>
+    );
+  }
+  return <span>{children}</span>;
+}
+
+function Table({ children }: ComponentPropsWithoutRef<'table'>) {
+  return (
+    <div className="my-4 w-full overflow-x-auto">
+      <table className="w-full border-collapse text-sm">{children}</table>
+    </div>
+  );
+}
+
+function TableHead({ children }: ComponentPropsWithoutRef<'thead'>) {
+  return <thead>{children}</thead>;
+}
+
+function TableCell({ children, style }: ComponentPropsWithoutRef<'th'>) {
+  return (
+    <th style={style} className="border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-left font-semibold">
+      {children}
+    </th>
+  );
+}
+
+function DataCell({ children, style }: ComponentPropsWithoutRef<'td'>) {
+  return (
+    <td style={style} className="border border-zinc-200 px-3 py-1.5 align-top">
+      {children}
+    </td>
+  );
+}
+
+const COMPONENTS: Components = {
+  h1: ({ children }) => <h1 className={HEADING_CLASS[1]}>{children}</h1>,
+  h2: ({ children }) => <h2 className={HEADING_CLASS[2]}>{children}</h2>,
+  h3: ({ children }) => <h3 className={HEADING_CLASS[3]}>{children}</h3>,
+  h4: ({ children }) => <h4 className={HEADING_CLASS[4]}>{children}</h4>,
+  h5: ({ children }) => <h5 className={HEADING_CLASS[5]}>{children}</h5>,
+  h6: ({ children }) => <h6 className={HEADING_CLASS[6]}>{children}</h6>,
+  p: Paragraph,
+  a: Link,
+  img: Image,
+  pre: Pre,
+  code: Code,
+  ul: ({ children }) => (
+    <ul className="my-3 list-disc space-y-1 pl-5 marker:text-zinc-400 [&_ul]:my-1 [&_ol]:my-1">{children}</ul>
+  ),
+  ol: ({ children }) => (
+    <ol className="my-3 list-decimal space-y-1 pl-5 marker:text-zinc-400 [&_ul]:my-1 [&_ol]:my-1">{children}</ol>
+  ),
+  li: ({ children }) => <li className="[&>p]:my-0 [&>p]:whitespace-normal">{children}</li>,
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 border-l-2 border-zinc-300 pl-3 text-zinc-600 [&>p]:my-0">{children}</blockquote>
+  ),
+  hr: () => <hr className="my-5 border-zinc-200" />,
+  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="italic">{children}</em>,
+  del: ({ children }) => <del className="text-zinc-500 line-through">{children}</del>,
+  table: Table,
+  thead: TableHead,
+  th: TableCell,
+  td: DataCell,
+};
+
+const REMARK_PLUGINS = [remarkGfm];
 
 export interface MarkdownPreviewProps {
   source: string;
@@ -215,7 +331,6 @@ export function MarkdownPreview({
   onImageContextMenu,
   openArchifyOnClick,
 }: MarkdownPreviewProps) {
-  const blocks = useMemo(() => parseMarkdown(source), [source]);
   const contextValue = useMemo(
     () => ({ assetBase, version: imageVersion, onImageContextMenu, openArchifyOnClick }),
     [assetBase, imageVersion, onImageContextMenu, openArchifyOnClick],
@@ -227,74 +342,10 @@ export function MarkdownPreview({
   return (
     <ImageContext.Provider value={contextValue}>
       <div className="w-full min-w-0 text-[clamp(15px,0.55vw+7px,18px)] leading-[1.75] text-zinc-800">
-        {blocks.map((block, index) => {
-          const key = `block-${index}`;
-          return renderBlock(block, key);
-        })}
+        <Markdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+          {source}
+        </Markdown>
       </div>
     </ImageContext.Provider>
   );
-}
-
-function renderBlock(block: Block, key: string): ReactNode {
-  switch (block.kind) {
-    case 'heading': {
-      const className = HEADING_CLASS[block.level] ?? HEADING_CLASS[3];
-      const content = renderInline(block.text, key);
-      if (block.level === 1) return <h1 key={key} className={className}>{content}</h1>;
-      if (block.level === 2) return <h2 key={key} className={className}>{content}</h2>;
-      if (block.level === 3) return <h3 key={key} className={className}>{content}</h3>;
-      if (block.level === 4) return <h4 key={key} className={className}>{content}</h4>;
-      return <h5 key={key} className={className}>{content}</h5>;
-    }
-    case 'paragraph':
-      return (
-        <p key={key} className="my-3 whitespace-pre-wrap first:mt-0">
-          {renderInline(block.text, key)}
-        </p>
-      );
-    case 'image':
-      return (
-        <MarkdownImage
-          key={key}
-          alt={block.alt}
-          src={block.src}
-          {...(block.title ? { title: block.title } : {})}
-          variant="block"
-        />
-      );
-    case 'code':
-      return (
-        <pre key={key} className="my-3 overflow-x-auto rounded-md bg-zinc-950 p-3 text-xs leading-relaxed text-zinc-100">
-          {block.lang ? <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">{block.lang}</div> : null}
-          <code>{block.code}</code>
-        </pre>
-      );
-    case 'ul':
-      return (
-        <ul key={key} className="my-3 list-disc space-y-1 pl-5">
-          {block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
-          ))}
-        </ul>
-      );
-    case 'ol':
-      return (
-        <ol key={key} className="my-3 list-decimal space-y-1 pl-5">
-          {block.items.map((item, itemIndex) => (
-            <li key={`${key}-${itemIndex}`}>{renderInline(item, `${key}-${itemIndex}`)}</li>
-          ))}
-        </ol>
-      );
-    case 'quote':
-      return (
-        <blockquote key={key} className="my-3 border-l-2 border-zinc-300 pl-3 text-zinc-600">
-          {renderInline(block.text, key)}
-        </blockquote>
-      );
-    case 'hr':
-      return <hr key={key} className="my-5 border-zinc-200" />;
-    default:
-      return null;
-  }
 }

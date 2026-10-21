@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Link from 'next/link';
-import { getType } from '@aidocs/api';
+import { getType, listUsableSkills } from '@aidocs/api';
 import { readConfig } from '@aidocs/core';
 import { WorkspaceShell } from './workspace-shell';
 
@@ -33,15 +33,26 @@ export default async function WorkspacePage({ params }: { params: Promise<{ grou
   const typeName = /type:\s*(.+)/.exec(metaRaw)?.[1]?.trim() ?? '';
   // 类型目录可能已被删除/改名；和 /types 页用同一条读取路径判断存在性，
   // 让「编辑类型」入口不至于静默变成死链。
-  let typeExists = false;
+  let typeDetail: ReturnType<typeof getType> | null = null;
   if (typeName) {
     try {
-      getType(root, typeName);
-      typeExists = true;
+      typeDetail = getType(root, typeName);
     } catch {
-      typeExists = false;
+      typeDetail = null;
     }
   }
+  const typeExists = typeDetail !== null;
+
+  // 输入框 "/" 唤起的技能列表只取该类型 type.yaml 里勾选的技能，
+  // 再按全局启停与 frontmatter 合格性过滤；没有类型就没有可选技能。
+  const allowedSkills = new Set(typeDetail?.manifest.skills ?? []);
+  const skills = listUsableSkills()
+    .filter((skill) => allowedSkills.has(skill.name))
+    .map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+      origin: skill.origin,
+    }));
 
   return (
     <WorkspaceShell
@@ -50,6 +61,7 @@ export default async function WorkspacePage({ params }: { params: Promise<{ grou
       text={text}
       typeName={typeName}
       typeExists={typeExists}
+      skills={skills}
     />
   );
 }

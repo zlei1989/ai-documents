@@ -8,6 +8,8 @@ import { DELETE as deleteModelRoute, PUT as saveModelRoute } from '../app/api/pr
 import { POST as testProviderRoute } from '../app/api/providers/[id]/test/route';
 import { GET as getSettings, PUT as putSettings } from '../app/api/settings/route';
 import { POST as initStorage } from '../app/api/storage/init/route';
+import { GET as getRepair, POST as postRepair } from '../app/api/storage/repair/route';
+import { POST as syncStorageRoute } from '../app/api/storage/sync/route';
 import { POST as createDoc, GET as listDocs } from '../app/api/docs/route';
 import { DELETE as deleteDoc, PUT as putDoc } from '../app/api/docs/[group]/[name]/route';
 import { GET as getMcp, POST as postMcp, DELETE as deleteMcp } from '../app/api/mcp/route';
@@ -212,6 +214,26 @@ describe('路由：设置与存储', () => {
     expect(state.git.branch).toBe('main');
 
     expect((await initStorage(initRequest())).status).toBe(200);
+  });
+
+  it('同步路由：参数与仓库校验；repair 路由缺 id / 未知 id', async () => {
+    const bad = await syncStorageRoute(jsonRequest('http://localhost/api/storage/sync', { action: 'fetch' }));
+    expect(bad.status).toBe(400);
+
+    await putSettings(jsonRequest('http://localhost/api/settings', { storageRoot: join(tmpRoot, 'norepo') }, 'PUT'));
+    const noRepo = await syncStorageRoute(jsonRequest('http://localhost/api/storage/sync', { action: 'pull' }));
+    expect(noRepo.status).toBe(400);
+    expect((await readJson<{ error: string }>(noRepo)).error).toContain('不是 git 仓库');
+
+    expect((await getRepair(new Request('http://localhost/api/storage/repair'))).status).toBe(400);
+    expect((await getRepair(new Request('http://localhost/api/storage/repair?id=missing'))).status).toBe(404);
+
+    const abortNoId = await postRepair(jsonRequest('http://localhost/api/storage/repair', { action: 'abort' }));
+    expect(abortNoId.status).toBe(400);
+    const abortMissing = await postRepair(
+      jsonRequest('http://localhost/api/storage/repair', { action: 'abort', id: 'missing' }),
+    );
+    expect(abortMissing.status).toBe(404);
   });
 });
 

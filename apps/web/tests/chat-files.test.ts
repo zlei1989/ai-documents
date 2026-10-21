@@ -35,6 +35,7 @@ describe('ChatPanel 文档文件夹入口', () => {
     });
     expect(html).toContain('创作会话');
     expect(html).toContain('查看文档文件');
+    expect(html).toContain('会话列表');
     expect(html).toContain('还没有对话');
     expect(html).not.toContain('FILE-PANEL');
   });

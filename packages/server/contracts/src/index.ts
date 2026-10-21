@@ -149,6 +149,26 @@ export type DocFileContent = z.infer<typeof DocFileContentSchema>;
 export const SessionStatusSchema = z.enum(['idle', 'running', 'waiting', 'done', 'error']);
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 
+/** 新建会话的默认标题；发第一条消息后由服务端改成消息摘要 */
+export const DEFAULT_CHAT_SESSION_TITLE = '新会话';
+
+/** 一个文档可以有多个互不影响的创作会话（各自一份模型上下文与渲染日志） */
+export const ChatSessionSchema = z.object({
+  id: z.string().min(1),
+  title: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  /** 服务端内存里的实时状态；进程重启后回到 idle */
+  status: SessionStatusSchema.default('idle'),
+});
+export type ChatSession = z.infer<typeof ChatSessionSchema>;
+
+export const ChatSessionListSchema = z.object({
+  activeId: z.string(),
+  sessions: z.array(ChatSessionSchema),
+});
+export type ChatSessionList = z.infer<typeof ChatSessionListSchema>;
+
 // 'diagram' 仅保留用于回放旧会话中的工具块；不再注册对应工具。
 export const ToolNameSchema = z.enum(['read', 'write', 'edit', 'ls', 'grep', 'mcp', 'research', 'diagram', 'archify', 'image']);
 export type ToolName = z.infer<typeof ToolNameSchema>;
@@ -431,11 +451,28 @@ export const GitHeadSchema = z.object({
 });
 export type GitHead = z.infer<typeof GitHeadSchema>;
 
+export const GitRemoteSchema = z.object({
+  /** 远端名，如 origin；没有远端时为 null */
+  name: z.string().nullable().default(null),
+  /** 展示用地址（已去掉账号 / token） */
+  url: z.string().nullable().default(null),
+  /** 用来比较的远端引用，如 origin/main；没有 tracking ref 时为 null */
+  upstream: z.string().nullable().default(null),
+  ahead: z.number().int().min(0).default(0),
+  behind: z.number().int().min(0).default(0),
+});
+export type GitRemote = z.infer<typeof GitRemoteSchema>;
+
 export const GitStatusSchema = z.object({
   isRepo: z.boolean().default(false),
   branch: z.string().nullable().default(null),
   lastCommit: GitHeadSchema.nullable().default(null),
   dirty: z.boolean().default(false),
+  /** 尚未解决的冲突文件（相对 storageRoot） */
+  conflicted: z.array(z.string()).default([]),
+  /** 合并 / rebase / cherry-pick 进行中 */
+  merging: z.boolean().default(false),
+  remote: GitRemoteSchema.default({ name: null, url: null, upstream: null, ahead: 0, behind: 0 }),
 });
 export type GitStatus = z.infer<typeof GitStatusSchema>;
 
@@ -444,6 +481,59 @@ export const StorageStateSchema = z.object({
   git: GitStatusSchema,
 });
 export type StorageState = z.infer<typeof StorageStateSchema>;
+
+export const GitSyncActionSchema = z.enum(['pull', 'push']);
+export type GitSyncAction = z.infer<typeof GitSyncActionSchema>;
+
+/** 推送前按文件夹切出的一个提交（一个 Artifact / 类型 / 技能 / 根目录一组） */
+export const GitSyncCommitSchema = z.object({
+  /** 分组路径，如 docs/JW/智能网关、types/技术方案、skills/写作、或 .（根目录） */
+  path: z.string(),
+  /** 提交摘要里用的中文标签 */
+  label: z.string(),
+  sha: z.string(),
+  /** 该组包含的变更文件数 */
+  files: z.number().int().min(0).default(0),
+});
+export type GitSyncCommit = z.infer<typeof GitSyncCommitSchema>;
+
+export const GitSyncResultSchema = z.object({
+  ok: z.boolean(),
+  action: GitSyncActionSchema,
+  reason: z.enum(['ok', 'conflict', 'behind', 'error']),
+  message: z.string(),
+  /** 冲突文件（相对 storageRoot）；非冲突时为空 */
+  files: z.array(z.string()).default([]),
+  /** 已自动启动的 pi 修复任务；没有可用模型时为 null */
+  repairId: z.string().nullable().default(null),
+  /** 推送前按文件夹生成的提交；没有未提交改动时为空 */
+  commits: z.array(GitSyncCommitSchema).default([]),
+  status: GitStatusSchema,
+});
+export type GitSyncResult = z.infer<typeof GitSyncResultSchema>;
+
+/* ---------------- git 冲突修复（pi） ---------------- */
+
+export type RepairStatus = 'running' | 'done' | 'error' | 'aborted';
+
+/** 冲突修复任务往设置页推送的事件；SSE 的 event 名与 type 一致 */
+export type RepairEvent =
+  | { type: 'status'; status: RepairStatus; text?: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool'; name: string; path?: string; status: 'running' | 'ok' | 'error'; detail?: string }
+  | { type: 'log'; level: 'info' | 'warn' | 'error'; text: string };
+
+export type RepairEventRecord = RepairEvent & { seq: number; at: string };
+
+export interface RepairSnapshot {
+  id: string;
+  files: string[];
+  status: RepairStatus;
+  events: RepairEventRecord[];
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+}
 
 /* ---------------- 资料查询（DeepSeek Search/Fetch） ---------------- */
 

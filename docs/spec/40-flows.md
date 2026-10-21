@@ -4,12 +4,13 @@
 
 ```
 进入文档
-  └─ 有会话？ ── 是 → SessionManager.open(最近的 sessions/*.jsonl)
-               └ 否 → 新建会话（装配见 20-architecture）
+  └─ 读 sessions/.index.json
+       ├─ 有 activeId → SessionManager.open(<activeId 的 pi 文件>) + 回放 <activeId>.ui.jsonl
+       └─ 没有索引 → 盘点 sessions/*.jsonl（旧版共享 ui.jsonl 一并迁移）→ 建索引/默认会话
   ↓
-聊天栏输入 → POST messages → pi session.prompt()
+聊天栏输入 → POST messages?session=<id> → pi session.prompt()
   ↓
-SSE 流式：status=running → 文本/思考/工具块 → agent_settled → status=done
+SSE 流式（events?session=<id>）：status=running → 文本/思考/工具块 → agent_settled → status=done
   ↓
 UI：徽标「已完成 · 可收起」（不自动收起）
   ↓
@@ -18,9 +19,20 @@ git 自动提交（debounce 2s，路径限定）
 文档预览刷新（fs watch → 重新读 MAIN.md）
 ```
 
+**多会话（上下文管理）**：
+
+```
+创作会话头部「会话」图标 → 浮层列表
+  ├─ 点「＋ 新建会话」→ POST sessions → activeId = 新会话，消息流清空，SSE 重连
+  ├─ 点旧会话        → PATCH sessions { activeId } → 消息流清空，SSE 以旧 id 重连并回放
+  └─ 切走的会话若 idle/done/error → 释放运行时；running/waiting 保留，切回来继续看
+```
+
+会话之间上下文、消息流、澄清卡完全独立；同一文档可以两个会话并行生成。会话标题由第一条消息生成，列表按最近使用排序。新建会话在发第一条消息前不落 pi 文件，但索引里已经存在。
+
 **手动收起**：点标题栏 `›` 或 `⌘J`，聊天栏收成 46px 窄条（显示「创作会话 · 已完成」竖排文字），点开恢复。宽度与显隐状态持久化。
 
-**消息流里能看到的块**：用户文本、assistant 文本（streamdown 流式）、thinking（折起）、工具卡（read/edit/ls/grep，`+N −M`）、附件 chips、选区块、**生图结果格子**（`images` 块：多图拼格子、点击放大、右键加入上下文）、错误块。
+**消息流里能看到的块**：用户文本、assistant 文本（streamdown 流式）、thinking（折起）、工具卡（read/edit/ls/grep，`+N −M`）、附件 chips、选区块、**生图结果格子**（`images` 块：多图拼格子、点击放大、右键复制图片或加入上下文）、错误块。
 
 ## 4.2 附件与选区上下文
 
@@ -42,7 +54,7 @@ git 自动提交（debounce 2s，路径限定）
 
 **必须满足**
 - 「类型编辑」入口带 `?doc`（创作页顶栏按钮；`/docs` 只在右键菜单，右栏顶栏不设）；「回到文档」用 `doc` 直接生成创作页地址，**不依赖 `router.back()`**（新标签页/刷新/直达时没有历史）。
-- 会话在后台**不断**（会话注册表按 artifactDir 持有）；返回后消息流原样、草稿不丢、滚动位保留。
+- 会话在后台**不断**（会话注册表按 artifactDir + sessionId 持有）；返回后消息流原样、草稿不丢、滚动位保留。切换会话只切走当前视图，不中断另一个正在生成的会话。
 - 类型编辑页有「未保存离开」提醒。
 - 文档引用的类型目录已被删除时，`/types/<typeName>?doc=...` 不 404：落地页给出「回到文档」与「创建同名类型」。
 - 保存后若存在进行中会话：顶部徽标「影响 N 个进行中会话 · 下一轮生效」；下一轮 `prompt()` 前重建会话壳（同一会话文件续接），见 20-architecture。
@@ -62,7 +74,7 @@ git 自动提交（debounce 2s，路径限定）
 
 **交互约束**
 - 是否使用澄清由模型/类型提示词决定；不使用时不出现卡片。
-- 澄清卡按 `groupId` 整组提交；选择结果进 `ui.jsonl`，刷新/重连后卡片与已选答案回放。
+- 澄清卡按 `groupId` 整组提交；选择结果进该会话的 `<id>.ui.jsonl`，刷新/重连后卡片与已选答案回放。
 - 等待期间会话状态 `waiting`，主输入框禁用并提示「请先在上方完成澄清选择」。
 - 用户可以点「其他…」自由输入，或「跳过，按默认写」；跳过项记为「未指定（按最合理判断）」。
 - 超时 10 分钟自动标 `expired`，模型按默认继续，并在文末列「待确认」。
@@ -81,7 +93,22 @@ git 自动提交（debounce 2s，路径限定）
 4. 立即 `git commit -m "rollback: <artifact> → <sha>"`（回滚本身可再撤销）；
 5. 目标早于首次提交 → 显示「没有更早版本」。
 
-**禁止**：`reset --hard`（单仓装所有 Artifact，会抹掉别的文档的未提交改动）；`revert`（历史成对出现，个人文档时间线不可读）。
+**拉取 / 推送**（设置 → 存储 → 版本历史，手动触发）：
+1. 拉取：`fetch --prune <remote>` → 已最新则结束；否则 `merge --no-edit <remote>/<branch>`。
+2. 推送：先按文件夹把未提交改动切成提交（文档 artifact / 类型 / 技能 / 根目录各一个，`human: <标签> · 推送前提交`），再 `push -u <remote> HEAD:<branch>`；远端领先 → 拒绝并提示「先拉取」，不 force。派生数据不进推送提交，任一组提交失败则中止推送。
+3. 拉取的合并冲突 → 自动起 pi 冲突修复：
+   ```
+   pull 冲突
+     └─ git merge 留下 MERGE_HEAD + 冲突文件
+          └─ pi 最小会话（read/write/edit/ls/grep，cwd=storageRoot）
+               ├─ 逐文件读冲突标记 → 合并 → 写回
+               ├─ 仍有标记：追加一轮（最多 2 次）
+               └─ 无标记：stage 冲突文件 → git commit --no-edit
+     └─ 设置页抽屉实时展示工具调用与结论；可中止，结束后可「放弃合并」
+   ```
+4. 冲突修复期间自动提交跳过（`MERGE_HEAD` 检测），避免半成品被提交成合并提交；「放弃合并」= `git merge --abort`，回到拉取前。
+
+**禁止**：`reset --hard`（单仓装所有 Artifact，会抹掉别的文档的未提交改动）；`revert`（历史成对出现，个人文档时间线不可读）；`push --force`。
 
 ## 4.5 新建与删除
 

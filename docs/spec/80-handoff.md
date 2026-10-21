@@ -14,7 +14,7 @@
 | M1 | 骨架 + 契约 | monorepo、shadcn init、contracts 的 zod 模型（Provider/Type/Artifact/ChatEvent） | `tsc --noEmit` 全绿，空页面可跑 |
 | M2 | 设置页 | providers CRUD + 拉模型两步 + 掩码；storage 选择 + git 初始化；mcp 表格 + 探针；skills 双来源 + 启停 | 能配好一个真实供应商并发起一次纯 LLM 调用 |
 | M3 | 存储与类型 | types/ docs/ 目录读写、type.yaml/meta.yaml 解析、原子写、路径穿越防护 | 建类型/建文档落盘正确，git 提交出现 |
-| M4 | pi 会话 + SSE | 会话注册表、装配、`subscribe` 投影、`ui.jsonl`、SSE 一条流、消息块渲染、附件与选区注入 | 打开文档能对话，模型改 `MAIN.md`，消息流可见工具块 |
+| M4 | pi 会话 + SSE | 会话注册表（文档 + 会话 id）、装配、`subscribe` 投影、`sessions/<id>.ui.jsonl`、SSE 一条流、消息块渲染、附件与选区注入 | 打开文档能对话，模型改 `MAIN.md`，消息流可见工具块 |
 | M5 | 类型往返 | 独立路由 `/types/[name]`、注入预览 tab、文件树管理器、保存后「下一轮生效」重建 | 创作中跳去改类型再回来，会话不断，下一轮生效 |
 | M6 | Git UI | 历史时间线、diff、回滚（脏树守卫） | 能回滚一篇文档且会话史同步回滚 |
 | M7 | 打磨 | 三栏拖拽/持久化/快捷键、暗色、错误态、empty 态 | 原型里定过的行为逐条对得上 |
@@ -29,6 +29,7 @@
 - [ ] 系统提示词里能看到类型 prompt.md（追加）且**没有**未勾选的 skills 段
 - [ ] 工具调用只出现白名单里的（无 bash）
 - [ ] 一次编辑触发 git commit，message 前缀 `ai:`
+- [ ] 配好远端后能拉取/推送；推送前按文件夹生成提交（文档 artifact / 类型 / 技能 / 根目录），拉取冲突时 pi 修复、自动提交合并，且合并期间自动提交不抢跑
 - [ ] 收起→展开消息流后历史完整；刷新后仍在
 
 ## 已知风险与对策

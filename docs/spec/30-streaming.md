@@ -2,7 +2,7 @@
 
 ## 一条流，不是两条
 
-参考仓库有「事件流 + 消息流」两条 SSE；本应用只有**单会话聊天**，合并为**一条**：`GET /api/docs/[...path]/events?afterSeq=N`。
+参考仓库有「事件流 + 消息流」两条 SSE；本应用只有**单条会话流**，合并为**一条**：`GET /api/docs/[...path]/events?session=<id>&afterSeq=N`。不带 `session` 时用索引里的 `activeId`（兼容旧调用）；`messages` / `clarifications` / `abort` 同理，客户端切换会话后所有请求都显式带 `session`，避免两个标签页互相改当前会话。
 
 ## SSE 契约（照抄参考仓库纪律，只留一份实现）
 
@@ -66,16 +66,28 @@ type Block =
 | 文件 | 归属 | 内容 | 是否进 git |
 |---|---|---|---|
 | `sessions/<id>.jsonl` | **pi** | 模型上下文真相（`session`/`model_change`/`thinking_level_change`/`message`，树状 id/parentId） | 是 |
-| `sessions/<id>.ui.jsonl` | 本应用 | 渲染块：用户消息原文、附件/选区注入、assistant 块快照、状态迁移 | 是 |
+| `sessions/<id>.ui.jsonl` | 本应用 | 该会话的渲染块：用户消息原文、附件/选区注入、assistant 块快照、状态迁移 | 否（派生数据；gitignore） |
+| `sessions/.index.json` | 本应用 | 会话清单（id/title/时间）与 `activeId`；空会话也在此 | 是 |
 
-- 为什么两份：pi 会话文件是模型上下文，**不含** UI 需要的附件 chips 与选区元信息；而 UI 块若反向投影 pi 条目，会在工具结果格式变化时脆断。两份文件同目录、同提交，回滚天然一致。
+- 为什么两份：pi 会话文件是模型上下文，**不含** UI 需要的附件 chips 与选区元信息；而 UI 块若反向投影 pi 条目，会在工具结果格式变化时脆断。回滚以 pi 会话为准，`<id>.ui.jsonl` 只负责渲染回放。
 - 写入：`appendFileSync`（O_APPEND，单进程串行）；读侧容错（坏行跳过 + WARN），写侧严格（契约校验失败直接抛）。
-- `seq` 由**本模块**在文件内单调分配（maxSeq+1），不交给调用方发号。
-- 会话 id 与文件：沿用 pi 的 `<ISO 时间>_<uuid>.jsonl` 命名；`ui.jsonl` 用同名去 `.jsonl` 后缀。
+- `seq` 由**本模块**在内存里发号（首次启动只扫文件尾块拿 maxSeq，之后 O(1)），不再为了一个序号读全文件。
+- 流式增量按 120ms 窗口合并：同一 `mergeKey` 只落最新快照，`message_end`/状态切换会立即 flush，保证 seq 与真实顺序一致。
+- 每份 `<id>.ui.jsonl` 超过 32MB 自动裁到最近 8MB（按整行切），所以它不进 git，避免每轮提交一个几百 MB 的 blob。
+- 会话 id 与文件：pi 会话沿用 `<ISO 时间>_<id>.jsonl` 命名（旧会话 id 是 uuid，新会话是应用生成的 `s-…`）；渲染日志是同目录的 `<id>.ui.jsonl`。旧版共享 `sessions/ui.jsonl` 在首次读取索引时迁到 `<activeId>.ui.jsonl`。
+
+## 多会话
+
+- **清单与当前会话**：`sessions/.index.json` 是唯一真相源；首次打开旧文档时从 `sessions/*.jsonl` 盘点并补写索引，空文档自动建一个「新会话」。
+- **新建**：`POST .../sessions` 生成 `s-<时间戳>-<随机>`，写入索引并设为 active；发第一条消息后 pi 才落 `<ISO>_<id>.jsonl`，之前只有渲染日志与索引条目。
+- **切换**：`PATCH .../sessions { activeId }`；前端立刻按新 id 重连事件流。切走的会话若空闲（idle/done/error）则释放运行时（关 MCP、丢模型上下文，切回来从会话文件重建）；`running` / `waiting` 的会话保留，切回来能看到它继续跑。
+- **标题**：新建时「新会话」，第一条用户消息后截前 28 字作标题；pi `session_info` 里的显式名称优先。
+- **隔离**：注册表按「artifactDir + sessionId」隔离 `AgentSession` / `ChatRuntime` / 澄清 hub；两个会话可以并行生成。
+- **手动中断**：`POST .../abort?session=<id>`。
 
 ## 重连与回放
 
-1. 客户端打开文档 → `GET .../events`（无 afterSeq）→ 服务端回放 `ui.jsonl` 全量；
+1. 客户端打开文档 → `GET .../sessions` 取 activeId → `GET .../events?session=<id>`（无 afterSeq）→ 服务端回放该会话的 `<id>.ui.jsonl` 全量；
 2. 客户端渲染历史，随后接收增量；
 3. 断线重连带 `afterSeq`（或 `Last-Event-ID`）；
 4. 服务端在 `subscribe` 上先挂监听再读历史（顺序见上），保证不丢不重。
@@ -85,7 +97,7 @@ type Block =
 - 刷新（`afterSeq=0`）默认只回放：**用户消息 + `final=true` 的最终回复 + 已答复的澄清卡 + 带 `images` 块的消息**；普通工具卡、思考块、中间文本不进入历史，避免行数过多、溯源困难。
 - 最后一轮状态仍是 `running` / `waiting`（刷新发生在生成过程中）时，保留当前轮全部事件，刷新后仍能看到实时过程（工具调用、思考、流式文本）。
 - 旧会话没有 `final` 标记时，每轮最后一条带文本的 assistant 消息兜底视为最终回复。
-- `?full=1` 可看完整回放；`sessions/ui.jsonl` 始终保留完整过程，不丢审计信息。
+- `?full=1` 可看完整回放；`sessions/<id>.ui.jsonl` 保留最近 8MB 的完整过程（体积到 32MB 自动裁剪），更早的轮次以 pi 会话文件为准。
 - 思考流（`thinking_delta`）实时下发为 `thinking` 块并显示「思考」；完成后属于中间过程，刷新时默认隐藏。
 
 ## 前端消费
@@ -96,6 +108,7 @@ type Block =
 
 ## 输入侧
 
-- 发送：`POST /api/docs/[...path]/messages { text, attachments?, selections? }`；运行中再发必须带 `mode: 'steer' | 'followUp'`（pi 的 `prompt()` 在流式期间裸调会 reject）。
-- 中断：`POST .../abort`。
+- 发送：`POST /api/docs/[...path]/messages?session=<id> { text, attachments?, selections? }`；运行中再发必须带 `mode: 'steer' | 'followUp'`（pi 的 `prompt()` 在流式期间裸调会 reject）。
+- 中断：`POST .../abort?session=<id>`；只作用于该会话**内存里**的运行时，没有在跑的运行时就是空操作（不为了 abort 现装配）。中断后模型流与工具立即停，等待中的澄清卡置为「已失效」，最后一帧状态写 `idle`；已写入文件的内容保留。
+- 澄清：`POST .../clarifications?session=<id> { groupId, answers }`。
 - **选区上下文**：在正文预览或「编辑原文」里选中区域 → 右键「加入对话上下文」→ 暂存为 `selections` 缓存（可多处累积、可单个移除或清空）→ 随下一条消息作为 `selection` 块发送；发送成功后立即清空，不重复注入。预览里右键图片同样可加入，内容是那张图的 Markdown 引用；没有选区、也没点中图片时保留浏览器原生右键菜单。

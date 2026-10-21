@@ -2,10 +2,11 @@ import { abort, httpStatusOf, ServiceError } from '@aidocs/api';
 
 export const runtime = 'nodejs';
 
-export async function POST(_req: Request, ctx: { params: Promise<{ group: string; name: string }> }) {
+export async function POST(req: Request, ctx: { params: Promise<{ group: string; name: string }> }) {
   const { group, name } = await ctx.params;
+  const sessionId = new URL(req.url).searchParams.get('session') ?? undefined;
   try {
-    await abort(group, name);
+    await abort(group, name, sessionId);
     return Response.json({ ok: true });
   } catch (error) {
     if (error instanceof ServiceError) {

@@ -8,3 +8,5 @@ export * from './archify-ai';
 export * from './clarify';
 export * from './assembly';
 export * from './runtime';
+export * from './sessions';
+export * from './repair-session';

@@ -2,7 +2,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Check, GitBranch, MessageSquare, SquarePen, Type, X } from 'lucide-react';
+import { ArrowUp, Check, GitBranch, MessageSquare, SquarePen, Type, X } from 'lucide-react';
 import type { GeneratedImage, GitCommit, Selection } from '@aidocs/contracts';
 import { httpJson } from '@aidocs/base';
 import { Badge, Button, buttonVariants, ChatPanel, cn } from '@aidocs/ui';
@@ -10,11 +10,14 @@ import { ContextMenu } from '../../../_components/context-menu';
 import { typeEditorHref } from '../../../_lib/doc-nav';
 import { settingsTabHref } from '../../../_lib/settings-tabs';
 import { archifySourcePath, archifyViewUrl, assetUrl, diagramMarkdownRef, docBase, normalizeAssetPath } from '../../../_lib/asset-url';
+import { canCopyImageToClipboard, copyImageToClipboard } from '../../../_lib/clipboard-image';
 import { MarkdownPreview, type MarkdownImageInfo } from '../../../docs/markdown';
 import { ArchifyEditor } from './archify-editor';
 import { DocFilesPanel } from './doc-files-panel';
 
 const KEY = 'aidocs.layout.workspace';
+/** 正文下滑超过这个距离才浮出「回到顶部」，短文档不打扰 */
+const BACK_TO_TOP_OFFSET = 320;
 const MIN_CHAT_W = 300;
 const MAX_CHAT_W = 960;
 /** 桌面断点：≥ 此宽度聊天栏在流内可拖拽，窄于此为覆盖式抽屉 */
@@ -44,6 +47,7 @@ export function WorkspaceShell({
   text,
   typeName,
   typeExists,
+  skills,
 }: {
   group: string;
   name: string;
@@ -51,6 +55,8 @@ export function WorkspaceShell({
   typeName: string;
   /** typeName 对应的类型目录是否存在；false 时入口仍可点，但会落到「创建该类型」页 */
   typeExists: boolean;
+  /** 输入框 "/" 唤起的技能；页面已按当前类型勾选与全局启停过滤 */
+  skills: { name: string; description: string; origin: 'personal' | 'project' }[];
 }) {
   const [chatW, setChatW] = React.useState(380);
   const [collapsed, setCollapsed] = React.useState(false);
@@ -79,9 +85,16 @@ export function WorkspaceShell({
   // 选区上下文缓存：正文/原文里右键加入，随下一条消息一起发，发完即清空。
   const [selections, setSelections] = React.useState<Selection[]>([]);
   const [selectionMenu, setSelectionMenu] = React.useState<{ x: number; y: number; text: string } | null>(null);
-  const [selectionToast, setSelectionToast] = React.useState<{ id: number; text: string } | null>(null);
+  const [selectionToast, setSelectionToast] = React.useState<{
+    id: number;
+    text: string;
+    tone: 'success' | 'error';
+  } | null>(null);
   const selectionToastId = React.useRef(0);
   const previewRef = React.useRef<HTMLElement>(null);
+  // 正文滚动容器与「回到顶部」浮标：只有纵向滚出 BACK_TO_TOP_OFFSET 才出现。
+  const scrollRef = React.useRef<HTMLElement>(null);
+  const [showBackToTop, setShowBackToTop] = React.useState(false);
   const selectionChars = selections.reduce((sum, selection) => sum + selection.chars, 0);
   const docUrl = `/api/docs/${encodeURIComponent(group)}/${encodeURIComponent(name)}`;
   // 稳定的回调：ChatPanel 的 SSE effect 依赖它，内联箭头函数会让消息流反复重连。
@@ -110,15 +123,34 @@ export function WorkspaceShell({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [previewImage]);
 
+  // 正文滚动时同步浮标显隐；text 变化（AI 改写 / 切文档）后重新量一次，
+  // 内容变短时浮标不该留在屏上。
+  React.useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const sync = () => setShowBackToTop(element.scrollTop > BACK_TO_TOP_OFFSET);
+    sync();
+    element.addEventListener('scroll', sync, { passive: true });
+    return () => element.removeEventListener('scroll', sync);
+  }, [editingSource, text]);
+
+  /** 回到正文顶部；尊重系统「减弱动态效果」设置。 */
+  function backToTop(): void {
+    const element = scrollRef.current;
+    if (!element) return;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    element.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+  }
+
   React.useEffect(() => {
     if (!selectionToast) return;
     const timer = setTimeout(() => setSelectionToast(null), 2400);
     return () => clearTimeout(timer);
   }, [selectionToast]);
 
-  function flashSelectionToast(message: string): void {
+  function flashSelectionToast(message: string, tone: 'success' | 'error' = 'success'): void {
     selectionToastId.current += 1;
-    setSelectionToast({ id: selectionToastId.current, text: message });
+    setSelectionToast({ id: selectionToastId.current, text: message, tone });
   }
 
   /**
@@ -183,6 +215,16 @@ export function WorkspaceShell({
       await navigator.clipboard.writeText(text);
     } catch {
       /* 剪贴板不可用时保持静默，⌘/Ctrl+C 仍可用 */
+    }
+  }
+
+  /** 右键「复制图片」：把像素写进系统剪贴板（SVG 自动栅格化成 PNG） */
+  async function copyImage(url: string): Promise<void> {
+    try {
+      await copyImageToClipboard(url);
+      flashSelectionToast('已复制图片到剪贴板');
+    } catch (error) {
+      flashSelectionToast(`复制图片失败：${error instanceof Error ? error.message : String(error)}`, 'error');
     }
   }
 
@@ -326,7 +368,11 @@ export function WorkspaceShell({
           </Badge>
         ) : null}
         {selectionToast ? (
-          <span key={selectionToast.id} className="text-[11px] text-emerald-600">
+          <span
+            key={selectionToast.id}
+            role="status"
+            className={cn('text-[11px]', selectionToast.tone === 'error' ? 'text-red-600' : 'text-emerald-600')}
+          >
             {selectionToast.text}
           </span>
         ) : null}
@@ -395,37 +441,60 @@ export function WorkspaceShell({
       ) : null}
 
       <div className="relative flex min-h-0 flex-1">
-        <section
-          className={cn(
-            'min-w-0 flex-1 px-4 py-4 sm:px-6 sm:py-6 lg:px-8 xl:px-12',
-            editingSource ? 'flex min-h-0 flex-col' : 'overflow-auto',
-          )}
-        >
-          {editingSource ? (
-            <textarea
-              aria-label="编辑 MAIN.md 原文"
-              autoFocus
-              spellCheck={false}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onContextMenu={openSourceSelectionMenu}
-              className="min-h-0 flex-1 resize-none rounded-md border border-zinc-200 bg-white p-3 font-mono text-[13px] leading-relaxed text-zinc-800 outline-none focus:ring-2 focus:ring-zinc-300"
-            />
-          ) : (
-            <article
-              ref={previewRef}
-              onContextMenu={openPreviewSelectionMenu}
-              className="w-full max-w-none break-words text-[clamp(14px,0.5vw+7px,17px)] leading-[1.8] text-zinc-800"
-            >
-              <MarkdownPreview
-                source={text}
-                assetBase={docBase(group, name)}
-                imageVersion={imageEpoch}
-                onImageContextMenu={openImageMenu}
+        <div className="relative min-w-0 flex-1">
+          <section
+            ref={scrollRef}
+            className={cn(
+              'h-full px-4 py-4 sm:px-6 sm:py-6 lg:px-8 xl:px-12',
+              editingSource ? 'flex min-h-0 flex-col' : 'overflow-auto',
+            )}
+          >
+            {editingSource ? (
+              <textarea
+                aria-label="编辑 MAIN.md 原文"
+                autoFocus
+                spellCheck={false}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onContextMenu={openSourceSelectionMenu}
+                className="min-h-0 flex-1 resize-none rounded-md border border-zinc-200 bg-white p-3 font-mono text-[13px] leading-relaxed text-zinc-800 outline-none focus:ring-2 focus:ring-zinc-300"
               />
-            </article>
-          )}
-        </section>
+            ) : (
+              <article
+                ref={previewRef}
+                onContextMenu={openPreviewSelectionMenu}
+                className="w-full max-w-none break-words text-[clamp(14px,0.5vw+7px,17px)] leading-[1.8] text-zinc-800"
+              >
+                <MarkdownPreview
+                  source={text}
+                  assetBase={docBase(group, name)}
+                  imageVersion={imageEpoch}
+                  onImageContextMenu={openImageMenu}
+                />
+              </article>
+            )}
+          </section>
+
+          {/* 长文回到顶部：窄屏错开右下角的「创作会话」浮标，桌面贴正文右下角。
+              悬停/聚焦时的「返回」细节：整体上浮，箭头自上滑出、由下补位，
+              右侧展开「回到顶部」标题；触屏无 hover，保持纯图标。 */}
+          {!editingSource && showBackToTop ? (
+            <Button
+              variant="outline"
+              onClick={backToTop}
+              aria-label="回到顶部"
+              className="group absolute bottom-20 right-4 z-10 h-10 gap-0 rounded-full bg-white/95 px-3 text-zinc-600 shadow-lg backdrop-blur transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-white hover:text-zinc-900 hover:shadow-xl active:translate-y-0 active:scale-95 focus-visible:-translate-y-0.5 focus-visible:bg-white focus-visible:text-zinc-900 lg:bottom-6 lg:right-6 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+            >
+              <span className="relative h-4 w-4 shrink-0 overflow-hidden" aria-hidden="true">
+                <ArrowUp className="absolute inset-0 h-4 w-4 transition-transform duration-200 ease-out group-hover:-translate-y-4 group-focus-visible:-translate-y-4 motion-reduce:transition-none" />
+                <ArrowUp className="absolute inset-0 h-4 w-4 translate-y-4 transition-transform duration-200 ease-out group-hover:translate-y-0 group-focus-visible:translate-y-0 motion-reduce:transition-none" />
+              </span>
+              <span className="grid grid-cols-[0fr] transition-[grid-template-columns,margin-left] duration-200 ease-out group-hover:ml-1.5 group-hover:grid-cols-[1fr] group-focus-visible:ml-1.5 group-focus-visible:grid-cols-[1fr] motion-reduce:transition-none">
+                <span className="overflow-hidden whitespace-nowrap text-xs">回到顶部</span>
+              </span>
+            </Button>
+          ) : null}
+        </div>
 
         {!collapsed && (
           <div
@@ -464,6 +533,7 @@ export function WorkspaceShell({
           <ChatPanel
             group={group}
             name={name}
+            skills={skills}
             selections={selections}
             onSelectionsSent={() => {
               setSelections([]);
@@ -534,6 +604,15 @@ export function WorkspaceShell({
           label={`图片「${imageMenu.info.alt || imageMenu.info.path}」的操作`}
           onClose={() => setImageMenu(null)}
           items={[
+            ...(canCopyImageToClipboard()
+              ? [
+                  {
+                    label: '复制图片',
+                    onSelect: () =>
+                      void copyImage(assetUrl(docBase(group, name), imageMenu.info.path, imageEpoch)),
+                  },
+                ]
+              : []),
             {
               label: '加入对话上下文',
               onSelect: () =>
@@ -589,6 +668,15 @@ export function WorkspaceShell({
           label={`图片「${chatImageMenu.image.alt || chatImageMenu.image.path}」的操作`}
           onClose={() => setChatImageMenu(null)}
           items={[
+            ...(canCopyImageToClipboard()
+              ? [
+                  {
+                    label: '复制图片',
+                    onSelect: () =>
+                      void copyImage(resolveChatImageUrl(chatImageMenu.image.path)),
+                  },
+                ]
+              : []),
             {
               label: '加入对话上下文',
               onSelect: () =>

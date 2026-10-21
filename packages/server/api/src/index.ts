@@ -15,3 +15,5 @@ export * from './diagrams';
 export * from './archify';
 export * from './archify-ai';
 export * from './git';
+export * from './git-sync';
+export * from './git-repair';

@@ -12,6 +12,7 @@
   "dependencies": {
     "@aidocs/agents": "workspace:*",
     "@aidocs/api": "workspace:*",
+    "@aidocs/archify": "workspace:*",
     "@aidocs/base": "workspace:*",
     "@aidocs/contracts": "workspace:*",
     "@aidocs/core": "workspace:*",
@@ -20,9 +21,10 @@
     "next": "^16.2.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "swr": "^2.3.0",
-    "zod": "^3.25.76",
-    "@aidocs/archify": "workspace:*"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@next/swc-darwin-arm64": "16.4.2",

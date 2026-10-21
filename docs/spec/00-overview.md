@@ -26,13 +26,13 @@
 |---|---|
 | G1 | 类型管理：创建/复制/删除 **ArtifactType**，编辑提示词、勾选全局技能与 MCP、管理资源文件树 |
 | G2 | 文档管理：**Group → Artifact** 两级；Artifact = 一个目录，入口 `MAIN.md` |
-| G3 | 创作对话：单会话、流式消息、工具调用可视化、附件与选区上下文注入、手动收起 |
+| G3 | 创作对话：多会话（头部列表新建/切换，上下文隔离）、流式消息、工具调用可视化、附件与选区上下文注入、手动收起 |
 | G4 | 类型快捷往返：创作 ↔ 类型编辑，独立路由，会话不断 |
-| G5 | 版本化：storageRoot 是 git 仓库，自动 commit + 历史/diff/回滚 UI |
+| G5 | 版本化：storageRoot 是 git 仓库，自动 commit + 历史/diff/回滚 UI + 手动拉取/推送（冲突交给 pi） |
 | G6 | 设置：模型供应商、存储目录、全局 MCP、全局 Skills |
 | G7 | 模型选择三层：全局默认 / 类型锁定 / 会话临时切换 |
 | G8 | 图示：AI 用 Archify JSON IR 生成结构图，MAIN.md 用标准 Markdown 引用 SVG 海报；右键打开交互 viewer / 结构编辑器，实时预览，保存回源 IR |
-| G9 | 生图：一个 `seedream_image_generation` 工具覆盖文生图/图生图/融合/图层拆分/交互编辑/组图/流式/联网搜索；参考图先上传方舟 Files API（1 天过期），生成图落 `assets/images` 并在消息流拼格子、放大、右键加入上下文 |
+| G9 | 生图：一个 `seedream_image_generation` 工具覆盖文生图/图生图/融合/图层拆分/交互编辑/组图/流式/联网搜索；参考图先上传方舟 Files API（1 天过期），生成图落 `assets/images` 并在消息流拼格子、放大、右键复制图片或加入上下文 |
 
 ## 非目标（v1 明确不做）
 
@@ -60,7 +60,7 @@
 | 应用 | Next.js 16（App Router）+ React 19 + TypeScript 5.9 |
 | UI | **shadcn/ui（Base UI 原语）** + Tailwind v4 + lucide-react + sonner |
 | 表格/表单 | TanStack Table、react-hook-form + zod |
-| Markdown | 自研轻量渲染（标题/段落/列表/代码/引用/图片；当前代码未接 streamdown/mermaid） |
+| Markdown | react-markdown + remark-gfm（CommonMark + GFM 表格/删除线/任务列表/脚注/自动链接；图片仍只渲染 assets/ 本地资源，外链不发请求） |
 | 数据 | SWR + fetch；SSE（非 WebSocket） |
 | 内核 | **pi** `@earendil-works/pi-coding-agent@1.3+`（in-process SDK），Node **≥ 22.19** |
 | 存储 | 文件系统 + git，无数据库 |

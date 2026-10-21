@@ -29,7 +29,7 @@ export function GeneratedImagesBlock({
       <div className="flex items-center gap-2 text-[11px] text-zinc-500">
         <span>生成结果 · {images.length} 张</span>
         <span className="flex-1" />
-        <span className="text-zinc-400">点击放大 · 右键加入上下文</span>
+        <span className="text-zinc-400">点击放大 · 右键复制或加入上下文</span>
       </div>
       <div
         className={cn('grid gap-1.5', single && 'grid-cols-1')}

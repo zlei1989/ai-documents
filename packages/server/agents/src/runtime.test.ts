@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import { appendEvent } from '@aidocs/core';
 import { putSession } from './registry';
-import { ChatRuntime, composePrompt, initialRound, projectToolImages } from './runtime';
+import { ChatRuntime, composePrompt, initialRound, initialStatus, projectToolImages } from './runtime';
 
 describe('composePrompt', () => {
   it('把多处选区按顺序拼成带编号的内容块', () => {
@@ -38,6 +38,25 @@ describe('composePrompt', () => {
     expect(prompt.indexOf('【图示手动编辑提醒】')).toBeLessThan(prompt.indexOf('把入口改成统一入口'));
     expect(prompt.endsWith('把入口改成统一入口')).toBe(true);
   });
+
+  it('显式技能块放在最前，正文与引用基准都带上，选区仍在用户文本之前', () => {
+    const prompt = composePrompt({
+      text: '照着这个风格画',
+      skill: {
+        name: 'ian-xiaohei',
+        file: '/skills/ian-xiaohei/SKILL.md',
+        baseDir: '/skills/ian-xiaohei',
+        body: '# Ian\n\n画图。',
+      },
+      selections: [{ source: 'MAIN.md', chars: 2, preview: '网关', text: '网关' }],
+    });
+
+    expect(prompt.startsWith('<skill name="ian-xiaohei" location="/skills/ian-xiaohei/SKILL.md">')).toBe(true);
+    expect(prompt).toContain('References are relative to /skills/ian-xiaohei.');
+    expect(prompt).toContain('画图。');
+    expect(prompt.indexOf('</skill>')).toBeLessThan(prompt.indexOf('【用户选中的文档内容'));
+    expect(prompt.endsWith('照着这个风格画')).toBe(true);
+  });
 });
 
 describe('initialRound', () => {
@@ -66,6 +85,30 @@ describe('initialRound', () => {
     appendEvent(log, { type: 'status', status: 'done' });
 
     expect(initialRound(log)).toBe(3);
+  });
+});
+
+describe('initialStatus', () => {
+  let dir: string | undefined;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('续接已完成/出错日志时保留终态；运行态残留按空闲处理', () => {
+    dir = mkdtempSync(join(tmpdir(), 'aidocs-status-'));
+    const doneLog = join(dir, 'done.ui.jsonl');
+    const errorLog = join(dir, 'error.ui.jsonl');
+    const runningLog = join(dir, 'running.ui.jsonl');
+    appendEvent(doneLog, { type: 'status', status: 'running' });
+    appendEvent(doneLog, { type: 'status', status: 'done' });
+    appendEvent(errorLog, { type: 'status', status: 'error' });
+    appendEvent(runningLog, { type: 'status', status: 'running' });
+
+    expect(initialStatus(doneLog)).toBe('done');
+    expect(initialStatus(errorLog)).toBe('error');
+    expect(initialStatus(runningLog)).toBe('idle');
+    expect(initialStatus(join(dir, 'missing.ui.jsonl'))).toBe('idle');
   });
 });
 
@@ -152,9 +195,9 @@ describe('ChatRuntime 生图结果投影', () => {
       },
     });
 
-    const messages = runtime
-      .history(0)
-      .filter((event): event is Extract<typeof event, { type: 'message' }> => event.type === 'message');
+    const messages = (await runtime.history(0)).filter(
+      (event): event is Extract<typeof event, { type: 'message' }> => event.type === 'message',
+    );
     const toolMessage = messages.filter((event) => event.message.mergeKey === 't-c1').at(-1)!;
     expect(toolMessage.message.blocks[0]).toMatchObject({
       kind: 'tool',
@@ -169,6 +212,154 @@ describe('ChatRuntime 生图结果投影', () => {
         { path: 'assets/images/城市夜景-2.jpg', alt: '城市夜景 第 2 张', size: '2048x2048' },
       ],
     });
+    runtime.dispose();
+  });
+});
+
+describe('ChatRuntime 流式快照节流', () => {
+  let dir: string | undefined;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  function fakeSession(onListener: (fn: ((event: unknown) => void) | null) => void) {
+    const fake = {
+      subscribe: (callback: (event: unknown) => void) => {
+        onListener(callback);
+        return () => onListener(null);
+      },
+      dispose: () => {},
+      abort: async () => {},
+      prompt: async () => {},
+      followUp: async () => 'sent',
+      steer: async () => 'sent',
+      getActiveToolNames: () => [],
+      systemPrompt: '',
+      sessionFile: undefined,
+    };
+    return fake as unknown as AgentSession;
+  }
+
+  it('几十个 delta 合并成少量快照；message_end 立即落完整文本', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'aidocs-runtime-stream-'));
+    let emit: ((event: unknown) => void) | null = null;
+    putSession(dir, fakeSession((fn) => (emit = fn)));
+
+    const runtime = await ChatRuntime.create({
+      artifactDir: dir,
+      typeDir: dir,
+      agentDir: dir,
+      manifest: { name: '测试', description: '', model: null, skills: [], mcp: [], resources: [] },
+      provider: { id: 'p', name: 'P', protocol: 'openai', baseUrl: 'https://x', apiKey: 'k', modelId: 'm' },
+    });
+
+    for (let i = 0; i < 60; i += 1) {
+      emit!({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: `第${i}段` } });
+    }
+    // 合并窗口内不写盘，避免每个 token 都产生一条快照
+    expect((await runtime.history(0)).filter((event) => event.type === 'message')).toHaveLength(0);
+
+    await new Promise((resolve) => setTimeout(resolve, 220));
+    const snapshots = (await runtime.history(0)).filter(
+      (event): event is Extract<typeof event, { type: 'message' }> => event.type === 'message',
+    );
+    expect(snapshots.length).toBeLessThanOrEqual(3);
+    const streamed = snapshots.at(-1)!.message.blocks[0] as { kind: string; text: string };
+    expect(streamed.text).toContain('第59段');
+
+    emit!({ type: 'message_end' });
+    const final = (await runtime.history(0))
+      .filter((event): event is Extract<typeof event, { type: 'message' }> => event.type === 'message')
+      .at(-1)!;
+    const block = final.message.blocks[0] as { kind: string; text: string; streaming?: boolean };
+    expect(block.streaming).not.toBe(true);
+    expect(block.text).toContain('第0段');
+    expect(block.text).toContain('第59段');
+
+    runtime.dispose();
+  });
+
+  it('非流式事件（状态）到来前先把积压快照落盘，seq 顺序不乱', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'aidocs-runtime-order-'));
+    let emit: ((event: unknown) => void) | null = null;
+    putSession(dir, fakeSession((fn) => (emit = fn)));
+
+    const runtime = await ChatRuntime.create({
+      artifactDir: dir,
+      typeDir: dir,
+      agentDir: dir,
+      manifest: { name: '测试', description: '', model: null, skills: [], mcp: [], resources: [] },
+      provider: { id: 'p', name: 'P', protocol: 'openai', baseUrl: 'https://x', apiKey: 'k', modelId: 'm' },
+    });
+
+    emit!({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '先说话' } });
+    emit!({ type: 'agent_start' });
+
+    const events = await runtime.history(0);
+    const messageIndex = events.findIndex((event) => event.type === 'message');
+    const statusIndex = events.findIndex((event) => event.type === 'status');
+    expect(messageIndex).toBeGreaterThanOrEqual(0);
+    expect(statusIndex).toBeGreaterThan(messageIndex);
+    expect(events.map((event) => event.seq)).toEqual([...events.map((event) => event.seq)].sort((a, b) => a - b));
+
+    runtime.dispose();
+  });
+});
+
+describe('ChatRuntime 暂停', () => {
+  let dir: string | undefined;
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = undefined;
+  });
+
+  it('abort 停掉当前 prompt：先按 settled 收尾，再把状态切回 idle 写进 ui.jsonl', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'aidocs-runtime-abort-'));
+    let aborts = 0;
+    let emit: ((event: unknown) => void) | null = null;
+    putSession(
+      dir,
+      {
+        subscribe: (callback: (event: unknown) => void) => {
+          emit = callback;
+          return () => {
+            emit = null;
+          };
+        },
+        dispose: () => {},
+        abort: async () => {
+          aborts += 1;
+          // 真实 pi 在 abort 里等 agent 变 idle，settle 事件先于 abort() resolve
+          emit?.({ type: 'agent_settled' });
+        },
+        prompt: () => new Promise<void>(() => {}),
+        followUp: async () => 'sent',
+        steer: async () => 'sent',
+        getActiveToolNames: () => [],
+        systemPrompt: '',
+        sessionFile: undefined,
+      } as unknown as AgentSession,
+    );
+
+    const runtime = await ChatRuntime.create({
+      artifactDir: dir,
+      typeDir: dir,
+      agentDir: dir,
+      manifest: { name: '测试', description: '', model: null, skills: [], mcp: [], resources: [] },
+      provider: { id: 'p', name: 'P', protocol: 'openai', baseUrl: 'https://x', apiKey: 'k', modelId: 'm' },
+    });
+
+    await runtime.send('写一篇长文', { prompt: '写一篇长文' });
+    expect(runtime.getStatus()).toBe('running');
+
+    await runtime.abort();
+
+    expect(aborts).toBe(1);
+    expect(runtime.getStatus()).toBe('idle');
+    const statuses = (await runtime.history(0)).flatMap((event) => (event.type === 'status' ? [event.status] : []));
+    expect(statuses).toEqual(['running', 'done', 'idle']);
+
     runtime.dispose();
   });
 });

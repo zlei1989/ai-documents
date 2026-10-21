@@ -13,7 +13,8 @@ interface Context {
 export async function POST(request: Request, context: Context) {
   return route(async () => {
     const { group, name } = await context.params;
+    const sessionId = new URL(request.url).searchParams.get('session') ?? undefined;
     const body = validate(ClarificationAnswerSchema, await readJson(request));
-    return answerClarification(group, name, body.groupId, body.answers);
+    return answerClarification(group, name, body.groupId, body.answers, sessionId);
   })();
 }

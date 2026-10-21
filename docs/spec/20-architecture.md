@@ -27,7 +27,8 @@ packages/client/
 ### 进程模型
 
 - **in-process SDK**（非子进程）：Next route handlers 跑 Node runtime，直接在服务进程里创建 `AgentSession`。
-- **会话注册表**挂在 `globalThis`（`Map<artifactDir, AgentSession>`），避免 dev 热重载丢会话；进程重启后从 `sessions/*.jsonl` 重建（`SessionManager.open`）。
+- **会话注册表**挂在 `globalThis`（`Map<artifactDir + sessionId, AgentSession>`，运行时/澄清 hub 同键隔离），避免 dev 热重载丢会话；进程重启后从 `sessions/*.jsonl` 重建（`SessionManager.open`）。同一文档可以同时有多个会话，各自一份模型上下文与渲染日志。
+- **会话清单**由 `sessions/.index.json` 维护（`packages/server/agents/src/sessions.ts`）：首次打开旧文档时盘点已有 pi 文件、迁移旧版 `ui.jsonl`；空文档自动建默认会话。切走空闲会话时释放运行时，`running`/`waiting` 保留。
 - `next.config` 把 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai` 等列入 `serverExternalPackages`（避免被打包；经验判断，实测确认）。
 
 ### 每个 Artifact 的装配顺序（照参考仓库适配器）
@@ -40,7 +41,7 @@ packages/client/
 5. 物化类型资源到 <artifact>/.aidocs/type/（gitignore），生成资源清单
 6. 构造 DefaultResourceLoader({ cwd: artifactDir, agentDir: 应用配置目录, appendSystemPromptOverride, skillsOverride, extensionFactories: [createMcpExtension(), createArchifyExtension(), createResearchExtension()（默认注入；配置不可用时省略）, createSeedreamExtension()（启用且配置完整时才给）] })
    await loader.reload()
-7. createAgentSession({ cwd, agentDir, modelRuntime, model, thinkingLevel, settingsManager: SettingsManager.inMemory({retry:{enabled:false}}), resourceLoader, sessionManager: SessionManager.create(artifactDir, <artifact>/sessions), tools: [read/write/edit/ls/grep, archify_guidelines/archify_save, research_*（默认；配置不可用时省略）, seedream_image_generation（启用时）, (可选) request_clarification], customTools? })
+7. createAgentSession({ cwd, agentDir, modelRuntime, model, thinkingLevel, settingsManager: SettingsManager.inMemory({retry:{enabled:false}}), resourceLoader, sessionManager: sessionFile ? SessionManager.open(sessionFile) : SessionManager.create(artifactDir, <artifact>/sessions, { id: sessionId }), tools: [read/write/edit/ls/grep, archify_guidelines/archify_save, research_*（默认；配置不可用时省略）, seedream_image_generation（启用时）, (可选) request_clarification], customTools? })
 8. await session.bindExtensions({ mode: 'rpc' })     ← MCP 在 session_start 连接；mode 必须写死 'rpc'
 9. session.subscribe(事件投影 → UI 块 + SSE)
 ```
@@ -59,6 +60,7 @@ packages/client/
 | 会话终态用 `agent_settled`（不是 `agent_end`） | 票 04 事件序实测 |
 | 续接用 `SessionManager.open(文件)`，不用 `continueRecent`（会取到 mtime 最新=上一次尝试） | 参考仓库适配器 |
 | `dispose()` 在扩展绑定点之前建好释放链 | `bindExtensions` 抛错时否则漏清理 MCP 子进程 |
+| 冲突修复是**独立最小会话**：cwd = storageRoot，`noExtensions / noSkills / noContextFiles`，工具仅 `read/write/edit/ls/grep`，`SessionManager.inMemory()` | 不让创作提示词、技能、MCP、AGENTS.md 干扰修冲突；没有 bash 就不能绕过应用 reset/checkout |
 
 ### 系统提示词 = 追加
 

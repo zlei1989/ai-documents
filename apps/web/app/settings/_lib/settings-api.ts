@@ -1,5 +1,8 @@
 import { httpJson } from '@aidocs/base';
 import type {
+  GitStatus,
+  GitSyncAction,
+  GitSyncResult,
   McpImportRejection,
   McpImportStyle,
   McpProbeResult,
@@ -7,6 +10,7 @@ import type {
   ModelInfo,
   ProviderView,
   Protocol,
+  RepairSnapshot,
   ResearchSourceInfo,
   ResearchTestInput,
   ResearchTestResult,
@@ -98,6 +102,23 @@ export const api = {
   updateSettings: (patch: SettingsPatch) =>
     httpJson<SettingsResponse>('/api/settings', { method: 'PUT', body: JSON.stringify(patch) }),
   initStorage: () => httpJson<StorageState>('/api/storage/init', { method: 'POST' }),
+
+  syncStorage: (action: GitSyncAction) =>
+    httpJson<GitSyncResult>('/api/storage/sync', { method: 'POST', body: JSON.stringify({ action }) }),
+  startRepair: () =>
+    httpJson<{ id: string; files: string[]; committed?: boolean; sha?: string | null }>('/api/storage/repair', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'start' }),
+    }),
+  abortRepair: (id: string) =>
+    httpJson<RepairSnapshot>('/api/storage/repair', { method: 'POST', body: JSON.stringify({ action: 'abort', id }) }),
+  abortMerge: () =>
+    httpJson<{ git: GitStatus }>('/api/storage/repair', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'abort-merge' }),
+    }),
+  getRepair: (id: string) =>
+    httpJson<RepairSnapshot>(`/api/storage/repair?id=${encodeURIComponent(id)}`),
 
   testResearch: (input: ResearchTestInput = {}) =>
     httpJson<ResearchTestResult>('/api/research/test', { method: 'POST', body: JSON.stringify(input) }),

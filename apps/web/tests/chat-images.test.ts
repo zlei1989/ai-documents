@@ -23,7 +23,7 @@ describe('GeneratedImagesBlock', () => {
       ],
     });
     expect(html).toContain('生成结果 · 3 张');
-    expect(html).toContain('点击放大 · 右键加入上下文');
+    expect(html).toContain('点击放大 · 右键复制或加入上下文');
     expect((html.match(/<img/g) ?? []).length).toBe(3);
     expect(html).toContain('src="/api/docs/jw/x/assets/images/a.jpg"');
     expect(html).toContain('alt="城市夜景 第 1 张"');

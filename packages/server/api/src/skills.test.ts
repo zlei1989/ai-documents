@@ -3,7 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readConfig } from '@aidocs/core';
-import { listSkills, readSkillContent, setSkillEnabled } from './skills';
+import {
+  listSkills,
+  listUsableSkills,
+  parseSkillCommand,
+  readSkillContent,
+  resolveSkillCommand,
+  resolveSkillInvocation,
+  setSkillEnabled,
+} from './skills';
 import { setStorageRoot } from './storage';
 import { ServiceError } from './service-error';
 import { isolateConfigDir, isolatePersonalSkillsDir } from './test-utils';
@@ -102,5 +110,94 @@ describe('Skills', () => {
     expect(codeOf(() => readSkillContent('missing', 'personal'))).toBe('NOT_FOUND');
     expect(codeOf(() => readSkillContent('../alpha', 'personal'))).toBe('VALIDATION');
     expect(codeOf(() => readSkillContent('alpha', 'project'))).toBe('VALIDATION');
+  });
+
+  it('可显式调用的技能只留启用且合格的，同名只留第一个来源', () => {
+    writeSkill(personal.dir, 'alpha', skillMd('alpha', '个人技能'));
+    writeSkill(personal.dir, 'mismatch', skillMd('别的名字', '名字不一致'));
+    mkdirSync(join(personal.dir, 'empty'));
+    setStorageRoot(storageDir);
+    writeSkill(join(storageDir, 'skills'), 'alpha', skillMd('alpha', '项目同名'));
+    writeSkill(join(storageDir, 'skills'), 'beta', skillMd('beta', '项目技能'));
+
+    expect(listUsableSkills().map((skill) => skill.name)).toEqual(['alpha', 'beta']);
+    expect(listUsableSkills().find((skill) => skill.name === 'alpha')?.origin).toBe('personal');
+
+    setSkillEnabled('beta', false);
+    expect(listUsableSkills().map((skill) => skill.name)).toEqual(['alpha']);
+  });
+
+  it('解析 /skill: 命令：摘出技能名与剩余需求，其它斜杠文本不动', () => {
+    expect(parseSkillCommand('/skill:tdd')).toEqual({ name: 'tdd', rest: '' });
+    expect(parseSkillCommand('/skill:tdd 写测试')).toEqual({ name: 'tdd', rest: '写测试' });
+    expect(parseSkillCommand('/skill:tdd\n第一行\n第二行')).toEqual({ name: 'tdd', rest: '第一行\n第二行' });
+    expect(parseSkillCommand('/tdd 写测试')).toBeNull();
+    expect(parseSkillCommand('请用 /skill:tdd')).toBeNull();
+  });
+
+  it('技能调用读出正文并去掉 frontmatter；未知/停用/不合格都有明确错误', () => {
+    const file = writeSkill(personal.dir, 'alpha', skillMd('alpha', '个人技能'));
+
+    const invocation = resolveSkillInvocation('alpha');
+    expect(invocation).toMatchObject({
+      name: 'alpha',
+      file,
+      baseDir: join(personal.dir, 'alpha'),
+    });
+    expect(invocation.body).toContain('# alpha');
+    expect(invocation.body).not.toContain('---');
+
+    expect(codeOf(() => resolveSkillInvocation('missing'))).toBe('NOT_FOUND');
+
+    writeSkill(personal.dir, 'mismatch', skillMd('别的名字', '名字不一致'));
+    expect(codeOf(() => resolveSkillInvocation('别的名字'))).toBe('VALIDATION');
+
+    setSkillEnabled('alpha', false);
+    expect(codeOf(() => resolveSkillInvocation('alpha'))).toBe('VALIDATION');
+  });
+
+  it('sendMessage 前的拆解：技能块与用户需求分开，普通消息原样返回', () => {
+    writeSkill(personal.dir, 'alpha', skillMd('alpha', '个人技能'));
+    const allowed = new Set(['alpha']);
+
+    const hit = resolveSkillCommand('/skill:alpha 画一张图', allowed);
+    expect(hit.text).toBe('画一张图');
+    expect(hit.titleText).toBe('画一张图');
+    expect(hit.skill?.name).toBe('alpha');
+    expect(hit.skill?.body).toContain('# alpha');
+
+    // 只有命令时用技能名当标题，标题不会是一串 /skill:
+    const bare = resolveSkillCommand('/skill:alpha', allowed);
+    expect(bare.text).toBe('');
+    expect(bare.titleText).toBe('alpha');
+
+    // 手输 /技能名 的简写也认，但没命中技能时保持普通文本
+    expect(resolveSkillCommand('/alpha 画图', allowed)).toMatchObject({
+      text: '画图',
+      titleText: '画图',
+      skill: { name: 'alpha' },
+    });
+    expect(resolveSkillCommand('/tmp/foo 看看', allowed)).toEqual({ text: '/tmp/foo 看看', titleText: '/tmp/foo 看看' });
+
+    expect(resolveSkillCommand('普通消息', allowed)).toEqual({ text: '普通消息', titleText: '普通消息' });
+  });
+
+  it('只认当前类型勾选的技能：类型外的显式命令报错，简写当普通文本', () => {
+    writeSkill(personal.dir, 'alpha', skillMd('alpha', '个人技能'));
+    writeSkill(personal.dir, 'beta', skillMd('beta', '另一个技能'));
+    const allowed = new Set(['alpha']);
+
+    // beta 全局可用但没被类型勾选：显式点名给出可操作的错误
+    expect(codeOf(() => resolveSkillCommand('/skill:beta 做点什么', allowed))).toBe('VALIDATION');
+
+    // 简写不报错，避免普通斜杠文本被误吞，只是不触发技能
+    expect(resolveSkillCommand('/beta 做点什么', allowed)).toEqual({
+      text: '/beta 做点什么',
+      titleText: '/beta 做点什么',
+    });
+
+    // 类型勾选但全局停用：解析阶段就拦下
+    setSkillEnabled('alpha', false);
+    expect(codeOf(() => resolveSkillCommand('/skill:alpha 画图', allowed))).toBe('VALIDATION');
   });
 });

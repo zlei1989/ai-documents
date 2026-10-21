@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, Card, CardContent, CardHeader, Input } from '@aidocs/ui';
 import { api } from '../_lib/settings-api';
 import { errorMessage, useLoader } from '../_lib/use-loader';
+import { GitSyncSection } from './git-sync';
 import { Field, InlineError, InlineHint, Spinner, Toggle } from './primitives';
 import { useToast } from './toast';
 
@@ -140,32 +141,40 @@ export function StorageTab() {
         <CardHeader className="justify-between">
           <div>
             <div className="text-sm font-medium">版本历史（git）</div>
-            <div className="text-[11px] text-zinc-400">只读状态；初始化需要手动点按钮</div>
+            <div className="text-[11px] text-zinc-400">本地提交与回滚；拉取/推送遇到冲突交给 pi 修复</div>
           </div>
           {git?.isRepo ? <Badge className="bg-emerald-50 text-emerald-700">已初始化</Badge> : <Badge>未初始化</Badge>}
         </CardHeader>
         <CardContent className="space-y-3">
           {git?.isRepo ? (
-            <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5 text-sm">
-              <dt className="text-xs text-zinc-500">当前分支</dt>
-              <dd className="font-mono text-xs">{git.branch ?? '（detached HEAD）'}</dd>
-              <dt className="text-xs text-zinc-500">最近提交</dt>
-              <dd className="text-xs">
-                {git.lastCommit ? (
-                  <span className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-mono text-zinc-500">{git.lastCommit.shortSha}</span>
-                    <span>{git.lastCommit.summary}</span>
-                    <span className="text-zinc-400">
-                      {git.lastCommit.author} · {formatTime(git.lastCommit.at)}
+            <>
+              <dl className="grid grid-cols-[88px_1fr] gap-x-3 gap-y-1.5 text-sm">
+                <dt className="text-xs text-zinc-500">当前分支</dt>
+                <dd className="font-mono text-xs">{git.branch ?? '（detached HEAD）'}</dd>
+                <dt className="text-xs text-zinc-500">最近提交</dt>
+                <dd className="text-xs">
+                  {git.lastCommit ? (
+                    <span className="flex flex-wrap items-baseline gap-2">
+                      <span className="font-mono text-zinc-500">{git.lastCommit.shortSha}</span>
+                      <span>{git.lastCommit.summary}</span>
+                      <span className="text-zinc-400">
+                        {git.lastCommit.author} · {formatTime(git.lastCommit.at)}
+                      </span>
                     </span>
-                  </span>
-                ) : (
-                  '还没有提交'
-                )}
-              </dd>
-              <dt className="text-xs text-zinc-500">未提交变更</dt>
-              <dd className="text-xs">{git.dirty ? <span className="text-amber-600">有</span> : '无'}</dd>
-            </dl>
+                  ) : (
+                    '还没有提交'
+                  )}
+                </dd>
+                <dt className="text-xs text-zinc-500">未提交变更</dt>
+                <dd className="text-xs">
+                  {git.dirty ? <span className="text-amber-600">有</span> : '无'}
+                  {git.conflicted.length > 0 ? (
+                    <span className="ml-2 text-amber-600">冲突 {git.conflicted.length} 个文件</span>
+                  ) : null}
+                </dd>
+              </dl>
+              <GitSyncSection git={git} onChanged={state.reload} />
+            </>
           ) : (
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-zinc-600">该目录还不是 git 仓库。</p>

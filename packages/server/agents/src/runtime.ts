@@ -1,13 +1,15 @@
 import { join } from 'node:path';
 import type { AgentSession } from '@earendil-works/pi-coding-agent';
 import type { Block, ChatEvent, ChatEventDraft, ChatMessage, GeneratedImage, McpServer, SessionStatus, ThinkingLevel, ToolName, TypeManifest } from '@aidocs/contracts';
-import { appendEvent, normalizeAssetPath, readEvents, readEventsAfter } from '@aidocs/core';
+import { appendEvent, normalizeAssetPath, readEventsAfter, readEventsTail } from '@aidocs/core';
 import { buildPiSession, type PiProviderInput, materializeResources } from './assembly';
 import { CLARIFICATION_TOOL, ClarificationHub } from './clarify';
 import { buildTypePrompt } from './prompt';
 import type { ResearchToolOptions } from './research';
 import { SEEDREAM_TOOL_NAME, type SeedreamToolOptions } from './seedream';
+import { sessionUiLog } from './sessions';
 import {
+  DEFAULT_SESSION_ID,
   dropClarificationHub,
   dropRuntime,
   dropSession,
@@ -21,6 +23,11 @@ import {
 
 export interface RuntimeInput {
   artifactDir: string;
+  /**
+   * 会话 id：一个文档可以并行多个互不影响的上下文。
+   * 直接装配（测试/旧调用）不传时用 DEFAULT_SESSION_ID。
+   */
+  sessionId?: string;
   typeDir: string;
   manifest: TypeManifest;
   mcp?: McpServer[];
@@ -45,10 +52,18 @@ export interface RuntimeInput {
 
 type Listener = (event: ChatEvent) => void;
 
-/** 一个 Artifact 的聊天运行时：装配 pi 会话、投影事件、写 ui.jsonl */
+/**
+ * 流式快照的合并窗口：模型每个 token 都会来一次 delta，如果每次都落盘 + 广播，
+ * ui.jsonl 会按输出长度的平方膨胀（实测一条 67KB 的思考写了 373MB）。
+ * 这里把窗口内的增量合并成一条最新快照，界面仍有 ~8fps 的流式感。
+ */
+const STREAM_FLUSH_MS = 120;
+
+/** 一个 Artifact 的一个创作会话：装配 pi 会话、投影事件、写该会话的 ui 日志 */
 export class ChatRuntime {
   private constructor(
     readonly artifactDir: string,
+    readonly sessionId: string,
     readonly session: AgentSession,
     private readonly uiLog: string,
     private readonly listeners: Set<Listener>,
@@ -64,24 +79,28 @@ export class ChatRuntime {
   private currentTextKey: string | null = null;
   private thinkingSegment = 0;
   private currentThinkingKey: string | null = null;
+  /** 尚未落盘的流式快照（mergeKey → 最新一条） */
+  private readonly pendingStream = new Map<string, ChatEventDraft>();
+  private streamTimer: ReturnType<typeof setTimeout> | undefined;
 
   static async create(input: RuntimeInput): Promise<ChatRuntime> {
+    const sessionId = input.sessionId ?? DEFAULT_SESSION_ID;
     const sessionsDir = join(input.artifactDir, 'sessions');
-    const uiLog = join(sessionsDir, 'ui.jsonl');
-    const cached = getRuntime<ChatRuntime>(input.artifactDir);
+    const uiLog = sessionUiLog(input.artifactDir, sessionId);
+    const cached = getRuntime<ChatRuntime>(input.artifactDir, sessionId);
     if (cached) return cached;
 
     // HMR 后 session 还在、runtime 被重建时，复用同一个 hub，工具闭包里才能拿到新 sink
-    const clarify = getClarificationHub(input.artifactDir) ?? new ClarificationHub();
-    putClarificationHub(input.artifactDir, clarify);
+    const clarify = getClarificationHub(input.artifactDir, sessionId) ?? new ClarificationHub();
+    putClarificationHub(input.artifactDir, clarify, sessionId);
 
-    const existing = getSession(input.artifactDir);
+    const existing = getSession(input.artifactDir, sessionId);
     if (existing) {
       // 进程内已有会话但没有运行时（如 HMR 后）：重建运行时并重新绑定事件
-      const rt = new ChatRuntime(input.artifactDir, existing, uiLog, new Set(), new Map(), 'idle', { value: initialRound(uiLog) }, clarify, input.onSettled);
+      const rt = new ChatRuntime(input.artifactDir, sessionId, existing, uiLog, new Set(), new Map(), initialStatus(uiLog), { value: initialRound(uiLog) }, clarify, input.onSettled);
       clarify.bind(rt);
       rt.bind();
-      putRuntime(input.artifactDir, rt);
+      putRuntime(input.artifactDir, rt, sessionId);
       return rt;
     }
 
@@ -101,12 +120,12 @@ export class ChatRuntime {
       clarify,
       ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
     });
-    putSession(input.artifactDir, handle.session);
+    putSession(input.artifactDir, handle.session, sessionId);
 
-    const runtime = new ChatRuntime(input.artifactDir, handle.session, uiLog, new Set(), new Map(), 'idle', { value: initialRound(uiLog) }, clarify, input.onSettled);
+    const runtime = new ChatRuntime(input.artifactDir, sessionId, handle.session, uiLog, new Set(), new Map(), initialStatus(uiLog), { value: initialRound(uiLog) }, clarify, input.onSettled);
     clarify.bind(runtime);
     runtime.bind();
-    putRuntime(input.artifactDir, runtime);
+    putRuntime(input.artifactDir, runtime, sessionId);
     if (input.researchDisabledReason) {
       runtime.publish({
         type: 'notice',
@@ -150,7 +169,7 @@ export class ChatRuntime {
             const block = msg?.blocks[0];
             if (msg && block && block.kind === 'text') {
               block.text += String(deltaEvent.delta ?? '');
-              this.emitMessage(msg);
+              this.emitMessage(msg, { stream: true });
             }
           } else if (deltaEvent?.type === 'thinking_delta') {
             if (!this.currentThinkingKey) {
@@ -169,7 +188,7 @@ export class ChatRuntime {
             const block = msg?.blocks[0];
             if (msg && block && block.kind === 'thinking') {
               block.text += String(deltaEvent.delta ?? '');
-              this.emitMessage(msg);
+              this.emitMessage(msg, { stream: true });
             }
           }
           break;
@@ -278,8 +297,37 @@ export class ChatRuntime {
   }
 
   publish(event: ChatEventDraft): void {
+    // 任何非流式事件（状态、工具、澄清卡、最终消息）都先把积压的流式快照落盘，
+    // 保证 ui.jsonl 里的 seq 顺序与真实发生顺序一致。
+    this.flushStream();
+    this.write(event);
+  }
+
+  /** 写一条事件并广播；调用方保证已经在 flushStream 之后 */
+  private write(event: ChatEventDraft): void {
     const full = appendEvent(this.uiLog, event);
     for (const l of this.listeners) l(full);
+  }
+
+  private scheduleStreamFlush(): void {
+    if (this.streamTimer) return;
+    this.streamTimer = setTimeout(() => {
+      this.streamTimer = undefined;
+      this.flushStream();
+    }, STREAM_FLUSH_MS);
+    // 别让一个等待中的合并窗口拖住进程退出
+    this.streamTimer.unref?.();
+  }
+
+  private flushStream(): void {
+    if (this.streamTimer) {
+      clearTimeout(this.streamTimer);
+      this.streamTimer = undefined;
+    }
+    if (this.pendingStream.size === 0) return;
+    const drafts = [...this.pendingStream.values()];
+    this.pendingStream.clear();
+    for (const draft of drafts) this.write(draft);
   }
 
   emitStatus(status: SessionStatus): void {
@@ -291,8 +339,14 @@ export class ChatRuntime {
     return this.round.value;
   }
 
-  private emitMessage(message: ChatMessage): void {
-    this.publish({ type: 'message', message: structuredClone(message) });
+  private emitMessage(message: ChatMessage, opts: { stream?: boolean } = {}): void {
+    const draft: ChatEventDraft = { type: 'message', message: structuredClone(message) };
+    if (opts.stream) {
+      this.pendingStream.set(message.mergeKey, draft);
+      this.scheduleStreamFlush();
+      return;
+    }
+    this.publish(draft);
   }
 
   subscribe(listener: Listener): () => void {
@@ -300,7 +354,7 @@ export class ChatRuntime {
     return () => this.listeners.delete(listener);
   }
 
-  history(afterSeq: number): ChatEvent[] {
+  async history(afterSeq: number): Promise<ChatEvent[]> {
     return readEventsAfter(this.uiLog, afterSeq);
   }
 
@@ -348,6 +402,8 @@ export class ChatRuntime {
       const result = opts.mode === 'followUp' ? await this.session.followUp(prompt) : await this.session.steer(prompt);
       return result === 'queued' ? 'queued' : 'sent';
     }
+    // 同步标成 running：切走会话时 releaseIdleSessionRuntime 不能把刚发出的这一轮当空闲释放
+    this.emitStatus('running');
     void this.session.prompt(prompt).catch((error: unknown) => {
       this.publish({ type: 'notice', level: 'error', text: `调用失败：${String((error as Error)?.message ?? error)}` });
       this.emitStatus('error');
@@ -363,10 +419,11 @@ export class ChatRuntime {
   }
 
   dispose(): void {
+    this.flushStream();
     this.clarify.cancelAll('会话已关闭');
-    dropClarificationHub(this.artifactDir);
-    dropRuntime(this.artifactDir);
-    dropSession(this.artifactDir);
+    dropClarificationHub(this.artifactDir, this.sessionId);
+    dropRuntime(this.artifactDir, this.sessionId);
+    dropSession(this.artifactDir, this.sessionId);
   }
 }
 
@@ -487,7 +544,8 @@ function resultText(result: unknown): string | undefined {
 export function initialRound(uiLog: string): number {
   let max = 0;
   try {
-    for (const event of readEvents(uiLog)) {
+    // 轮次只增不减，读尾部就够；不要为了一个数字把几百 MB 的日志全读一遍
+    for (const event of readEventsTail(uiLog)) {
       if (event.type !== 'message') continue;
       const round = event.message.round;
       if (typeof round === 'number' && round > max) max = round;
@@ -498,6 +556,21 @@ export function initialRound(uiLog: string): number {
   return max;
 }
 
+/** 续接 ui 日志时的初始状态：已完成/出错要保留，运行态残留（进程重启）回落为空闲 */
+export function initialStatus(uiLog: string): SessionStatus {
+  try {
+    const events = readEventsTail(uiLog, 128 * 1024);
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const event = events[i]!;
+      if (event.type !== 'status') continue;
+      return event.status === 'done' || event.status === 'error' ? event.status : 'idle';
+    }
+  } catch {
+    /* 读不到就当空闲 */
+  }
+  return 'idle';
+}
+
 /** 组装发给模型的提示词：附件与选区变成明确文本块 */
 export function composePrompt(input: {
   text: string;
@@ -505,8 +578,19 @@ export function composePrompt(input: {
   selections?: { source: string; chars: number; preview: string; text: string }[];
   /** 编辑器手动保存过、需要提醒模型先 read 的图示 */
   manualDiagramEdits?: { path: string; at: string }[];
+  /** 显式 /skill: 调用：把 SKILL.md 正文包成 pi 同款技能块放在最前 */
+  skill?: { name: string; file: string; baseDir: string; body: string };
 }): string {
   const parts: string[] = [];
+  if (input.skill) {
+    // 与 pi 展开 /skill: 命令时的格式保持一致，模型看到的内容不因入口不同而变形
+    parts.push(`<skill name="${input.skill.name}" location="${input.skill.file}">`);
+    parts.push(`References are relative to ${input.skill.baseDir}.`);
+    parts.push('');
+    parts.push(input.skill.body);
+    parts.push('</skill>');
+    parts.push('');
+  }
   if (input.manualDiagramEdits?.length) {
     parts.push('【图示手动编辑提醒】');
     parts.push('下面这些 SVG 图示在本会话之外被修改过，磁盘上的版本才是最新基线。修改前请先用 read 读取，不要沿用历史里的旧 SVG：');

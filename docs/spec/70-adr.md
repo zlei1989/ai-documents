@@ -7,7 +7,7 @@
 | ADR-01 | 纯本地 localhost，无鉴权 | 个人工具，v1 范围 | 地图定调 |
 | ADR-02 | 命名：ArtifactType / Artifact / Group | 语义清晰 | GLOSSARY.md |
 | ADR-03 | 类型 = 文件夹 + 清单（type.yaml/prompt.md/resources/） | 方法论可被 git 与拷贝 | 票 07 |
-| ADR-04 | 一 Artifact 一持久会话，**会话史随文档 git 化** | 回滚文档=回滚会话 | 票 01/07 |
+| ADR-04 | 一 Artifact 至少一个持久会话，**会话史随文档 git 化**（ADR-35 扩展为多会话） | 回滚文档=回滚会话 | 票 01/07 |
 | ADR-05 | 会话 JSONL 用 pi 的 `SessionManager.create(cwd, customDir)` 落 `<artifact>/sessions/` | 实测可控 | 票 01/04 |
 | ADR-06 | 系统提示词 = **追加**（保留 pi 默认） | 用户拍板 | 票 07 ⚠️ 见下 |
 | ADR-07 | 资源 = 物化到 `.aidocs/type/` + 清单按需 read（≤4KB mustRead 全文直插） | token 成本 | 票 07 |
@@ -33,6 +33,7 @@
 | ADR-32 | 交互 HTML 走 `.aidocs` 缓存 + sandbox iframe + CSP | 保留 viewer 交互，不污染 Markdown、不提交大文件 | [90](90-archify.md) |
 | ADR-33 | Archify 表单覆盖 5 种常见类型，其余 JSON；v1 不做像素拖拽 | 控制复杂度；高级字段不丢 | [90](90-archify.md) |
 | ADR-34 | 移除自由 SVG 引擎（diagram_guidelines/diagram_save、SVG 编辑器、SVG 编辑 API 与设计文档）；普通 SVG 只读，Archify 唯一图示引擎 | 用户明确要求全面拥抱 Archify；减少双栈维护与误导入口 | [90](90-archify.md) |
+| ADR-35 | 同一 Artifact 多会话：`.index.json` 记清单/activeId，每会话独立 pi + `<id>.ui.jsonl`；头部图标新建/切换；切走空闲会话释放运行时 | 创作中按主题拆上下文，避免一条长会话越聊越贵/越乱 | [30](30-streaming.md) |
 
 ## ⚠️ 需要注意的取舍
 

@@ -2,14 +2,20 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join, resolve } from 'node:path';
 import type { GitCommit, StorageState } from '@aidocs/contracts';
 import {
+  AUTO_COMMIT_EXCLUDES,
   PathEscapeError,
   addAll,
+  addAllAsync,
   assertInside,
-  commit,
+  commitAsync,
   git,
+  gitAsync,
+  gitOperationInProgress,
   hasStagedChanges,
+  hasStagedChangesAsync,
   initRepo,
   isRepo,
+  isRepoAsync,
   readConfig,
 } from '@aidocs/core';
 import { ServiceError } from './service-error';
@@ -26,7 +32,14 @@ export interface StorageStatus {
 }
 
 const GITIGNORE_HEADER = '# 我的文档';
-const GITIGNORE_RULES = ['.DS_Store', 'node_modules/', '.trash/', '.aidocs/'];
+const GITIGNORE_RULES = [
+  '.DS_Store',
+  'node_modules/',
+  '.trash/',
+  '.aidocs/',
+  '**/sessions/ui.jsonl',
+  '**/sessions/*.ui.jsonl',
+];
 
 /** 配置里的 storageRoot（可能为空，不抛错） */
 export function configuredStorageRoot(): string {
@@ -104,26 +117,57 @@ export function ensureTrashIgnored(root: string): void {
   ensureGitignore(root);
 }
 
+/** 打开文档/开聊时顺便补齐 .gitignore：老仓库也能拿到新的 sessions/*.ui.jsonl 忽略规则 */
+export function ensureStorageGitignore(root: string): void {
+  ensureGitignore(resolve(root));
+}
+
 function commitWithIdentity(dir: string, message: string, pathspec?: string): string {
   try {
-    return commit(dir, message, pathspec);
-  } catch {
-    const args = ['-c', 'user.name=我的文档', '-c', 'user.email=aidocs@localhost', 'commit', '-m', message];
-    if (pathspec) args.push('--', pathspec);
+    const args = ['commit', '-m', message];
+    if (pathspec) args.push('--', pathspec, ...AUTO_COMMIT_EXCLUDES);
     git(dir, args);
     return git(dir, ['rev-parse', 'HEAD']).stdout.trim();
+  } catch {
+    const args = ['-c', 'user.name=我的文档', '-c', 'user.email=aidocs@localhost', 'commit', '-m', message];
+    if (pathspec) args.push('--', pathspec, ...AUTO_COMMIT_EXCLUDES);
+    git(dir, args);
+    return git(dir, ['rev-parse', 'HEAD']).stdout.trim();
+  }
+}
+
+async function commitWithIdentityAsync(dir: string, message: string, pathspec?: string): Promise<string> {
+  try {
+    return await commitAsync(dir, message, pathspec, AUTO_COMMIT_EXCLUDES);
+  } catch {
+    const args = ['-c', 'user.name=我的文档', '-c', 'user.email=aidocs@localhost', 'commit', '-m', message];
+    if (pathspec) args.push('--', pathspec, ...AUTO_COMMIT_EXCLUDES);
+    await gitAsync(dir, args);
+    return (await gitAsync(dir, ['rev-parse', 'HEAD'])).stdout.trim();
   }
 }
 
 /**
  * 限定路径的自动提交：无变更不提交；非 git 仓库返回 null。
  * 未配置 git 身份时回退到 我的文档（不写全局 config）。
+ * `sessions/ui.jsonl` 是派生渲染日志，永远不进提交。
  */
 export function commitPath(root: string, relPath: string, message: string): string | null {
   if (!isRepo(root)) return null;
-  addAll(root, relPath);
-  if (!hasStagedChanges(root, relPath)) return null;
+  // 合并/rebase 期间不自动提交：冲突半成品与 pi 正在修的文件都不能被抢跑成合并提交
+  if (gitOperationInProgress(root)) return null;
+  addAll(root, relPath, AUTO_COMMIT_EXCLUDES);
+  if (!hasStagedChanges(root, relPath, AUTO_COMMIT_EXCLUDES)) return null;
   return commitWithIdentity(root, message, relPath);
+}
+
+/** 异步版的 commitPath：自动提交不该堵住事件循环 */
+export async function commitPathAsync(root: string, relPath: string, message: string): Promise<string | null> {
+  if (!(await isRepoAsync(root))) return null;
+  if (gitOperationInProgress(root)) return null;
+  await addAllAsync(root, relPath, AUTO_COMMIT_EXCLUDES);
+  if (!(await hasStagedChangesAsync(root, relPath, AUTO_COMMIT_EXCLUDES))) return null;
+  return commitWithIdentityAsync(root, message, relPath);
 }
 
 export function classifyOrigin(summary: string): GitCommit['origin'] {

@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { assertInsideRoot, initStorage, resolveStorageRoot, storageStatus } from './storage';
+import { assertInsideRoot, commitPathAsync, initStorage, resolveStorageRoot, storageStatus } from './storage';
+import { git, initRepo } from '@aidocs/core';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -40,7 +41,15 @@ describe('存储目录', () => {
   it('未选择存储目录时返回空路径与未初始化 git', () => {
     const state = getStorageState();
     expect(state.storageRoot).toBe('');
-    expect(state.git).toEqual({ isRepo: false, branch: null, lastCommit: null, dirty: false });
+    expect(state.git).toEqual({
+      isRepo: false,
+      branch: null,
+      lastCommit: null,
+      dirty: false,
+      conflicted: [],
+      merging: false,
+      remote: { name: null, url: null, upstream: null, ahead: 0, behind: 0 },
+    });
   });
 
   it('拒绝相对路径、根目录与系统目录', () => {
@@ -161,6 +170,28 @@ describe('storage', () => {
       if (previous === undefined) delete process.env.AIDOCS_CONFIG_DIR;
       else process.env.AIDOCS_CONFIG_DIR = previous;
     }
+  });
+
+  it('自动提交不会把 sessions/*.ui.jsonl 带进版本库（1.2MB 也不进）', async () => {
+    const root = tempDir('aidocs-autocommit-');
+    cleanupDirs.push(root);
+    initRepo(root);
+    const artifact = join(root, 'docs', 'g', 'n');
+    mkdirSync(join(artifact, 'sessions'), { recursive: true });
+    writeFileSync(join(artifact, 'MAIN.md'), '# 正文\n', 'utf8');
+    writeFileSync(join(artifact, 'sessions', 'ui.jsonl'), 'x'.repeat(1_200_000), 'utf8');
+    writeFileSync(join(artifact, 'sessions', 's-1.ui.jsonl'), 'y'.repeat(1_200_000), 'utf8');
+
+    const sha = await commitPathAsync(root, 'docs/g/n', 'ai: g/n · 本轮修改');
+    expect(sha).toBeTruthy();
+
+    const tracked = git(root, ['ls-files']).stdout;
+    expect(tracked).toContain('docs/g/n/MAIN.md');
+    expect(tracked).not.toContain('sessions/ui.jsonl');
+    expect(tracked).not.toContain('sessions/s-1.ui.jsonl');
+    // 渲染日志留在工作区，只是不提交
+    expect(existsSync(join(artifact, 'sessions', 'ui.jsonl'))).toBe(true);
+    expect(existsSync(join(artifact, 'sessions', 's-1.ui.jsonl'))).toBe(true);
   });
 
   it('路径穿越被拒绝', () => {

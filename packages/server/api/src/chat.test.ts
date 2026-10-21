@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { updateConfig } from '@aidocs/core';
-import { ensureRuntime } from './chat';
+import { appendEvent, updateConfig } from '@aidocs/core';
+import { dropRuntime, putRuntime, sessionUiLog } from '@aidocs/agents';
+import { abort, activateChatSession, createChatSession, ensureRuntime, history, listChatSessions } from './chat';
 import { createDoc } from './docs';
 import { importModels, saveProvider } from './providers';
 import { setStorageRoot } from './storage';
@@ -68,9 +69,9 @@ describe('ensureRuntime 的资料查询装配', () => {
     const runtime = await ensureRuntime('测试', '文稿');
     try {
       expect(runtime.session.getActiveToolNames()).not.toContain('research_search');
-      const notices = runtime
-        .history(0)
-        .filter((event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice');
+      const notices = (await runtime.history(0)).filter(
+        (event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice',
+      );
       expect(notices.some((notice) => notice.level === 'warn' && notice.text.includes('资料查询未生效'))).toBe(true);
       expect(notices.some((notice) => notice.text.includes('missing'))).toBe(true);
     } finally {
@@ -91,6 +92,72 @@ describe('ensureRuntime 的资料查询装配', () => {
       expect(second.session.sessionFile?.startsWith(sessionsDir)).toBe(true);
     } finally {
       second.dispose();
+    }
+  });
+});
+
+describe('多会话', () => {
+  it('列出/新建/切换：新会话成为 active，旧会话保留且可切回', async () => {
+    seed();
+
+    const initial = await listChatSessions('测试', '文稿');
+    expect(initial.sessions).toHaveLength(1);
+    const firstId = initial.activeId;
+
+    const created = await createChatSession('测试', '文稿');
+    expect(created.sessions).toHaveLength(2);
+    expect(created.activeId).not.toBe(firstId);
+    expect(created.sessions[0]?.id).toBe(created.activeId);
+    expect(created.sessions[0]?.title).toBe('新会话');
+
+    const activated = await activateChatSession('测试', '文稿', firstId);
+    expect(activated.activeId).toBe(firstId);
+  });
+
+  it('每个会话读自己的渲染日志，互不串台', async () => {
+    seed();
+    const initial = await listChatSessions('测试', '文稿');
+    const created = await createChatSession('测试', '文稿');
+    const artifactDir = join(root, 'docs', '测试', '文稿');
+
+    appendEvent(sessionUiLog(artifactDir, initial.activeId), {
+      type: 'message',
+      message: { id: 'u-1', mergeKey: 'u-1', role: 'user', blocks: [{ kind: 'text', text: '旧会话' }], round: 1 },
+    });
+    appendEvent(sessionUiLog(artifactDir, created.activeId), {
+      type: 'message',
+      message: { id: 'u-1', mergeKey: 'u-1', role: 'user', blocks: [{ kind: 'text', text: '新会话' }], round: 1 },
+    });
+
+    const oldEvents = await history('测试', '文稿', 0, initial.activeId);
+    const newEvents = await history('测试', '文稿', 0, created.activeId);
+
+    expect(JSON.stringify(oldEvents)).toContain('旧会话');
+    expect(JSON.stringify(oldEvents)).not.toContain('新会话');
+    expect(JSON.stringify(newEvents)).toContain('新会话');
+    expect(JSON.stringify(newEvents)).not.toContain('旧会话');
+  });
+
+  it('不存在的 sessionId 返回 NOT_FOUND，不会悄悄落到 active 会话', async () => {
+    seed();
+    await expect(history('测试', '文稿', 0, 'missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(ensureRuntime('测试', '文稿', 'missing')).rejects.toMatchObject({ code: 'NOT_FOUND' });
+  });
+
+  it('同一文档的两个会话各自持有运行时，dispose 只释放自己', async () => {
+    seed();
+    const initial = await listChatSessions('测试', '文稿');
+    const second = (await createChatSession('测试', '文稿')).activeId;
+
+    const a = await ensureRuntime('测试', '文稿', initial.activeId);
+    const b = await ensureRuntime('测试', '文稿', second);
+    try {
+      expect(a).not.toBe(b);
+      expect(a.sessionId).toBe(initial.activeId);
+      expect(b.sessionId).toBe(second);
+    } finally {
+      a.dispose();
+      b.dispose();
     }
   });
 });
@@ -120,9 +187,9 @@ describe('ensureRuntime 的生图装配', () => {
     const runtime = await ensureRuntime('测试', '文稿');
     try {
       expect(runtime.session.getActiveToolNames()).not.toContain('seedream_image_generation');
-      const notices = runtime
-        .history(0)
-        .filter((event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice');
+      const notices = (await runtime.history(0)).filter(
+        (event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice',
+      );
       expect(notices.some((notice) => notice.text.includes('生图工具未生效'))).toBe(false);
     } finally {
       runtime.dispose();
@@ -136,13 +203,42 @@ describe('ensureRuntime 的生图装配', () => {
     const runtime = await ensureRuntime('测试', '文稿');
     try {
       expect(runtime.session.getActiveToolNames()).not.toContain('seedream_image_generation');
-      const notices = runtime
-        .history(0)
-        .filter((event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice');
+      const notices = (await runtime.history(0)).filter(
+        (event): event is Extract<typeof event, { type: 'notice' }> => event.type === 'notice',
+      );
       expect(notices.some((notice) => notice.level === 'warn' && notice.text.includes('生图工具未生效'))).toBe(true);
       expect(notices.some((notice) => notice.text.includes('API Key'))).toBe(true);
     } finally {
       runtime.dispose();
     }
+  });
+});
+
+describe('abort 暂停', () => {
+  it('有运行时：直接中断，不重新装配', async () => {
+    seed();
+    const list = await listChatSessions('测试', '文稿');
+    const artifactDir = join(root, 'docs', '测试', '文稿');
+    let calls = 0;
+    putRuntime(
+      artifactDir,
+      {
+        abort: async () => {
+          calls += 1;
+        },
+      },
+      list.activeId,
+    );
+
+    await abort('测试', '文稿', list.activeId);
+
+    expect(calls).toBe(1);
+    dropRuntime(artifactDir, list.activeId);
+  });
+
+  it('没有运行时：静默成功（重复暂停 / 空闲会话是空操作）', async () => {
+    seed();
+
+    await expect(abort('测试', '文稿')).resolves.toBeUndefined();
   });
 });
