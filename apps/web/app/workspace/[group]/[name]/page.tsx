@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Link from 'next/link';
-import { getType, listUsableSkills } from '@aidocs/api';
+import { assertValidName, getType, listUsableSkills } from '@aidocs/api';
 import { readConfig } from '@aidocs/core';
 import { WorkspaceShell } from './workspace-shell';
 
@@ -14,15 +14,23 @@ export default async function WorkspacePage({ params }: { params: Promise<{ grou
   const name = decode(raw.name);
   const config = readConfig();
   const root = config.settings.storageRoot;
-  const artifactDir = root ? join(root, 'docs', group, name) : '';
+  // 路由段来自 URL：先按创建文档时的同一套规则校验，避免 `..` / 分隔符把路径带出 storageRoot
+  let artifactDir = '';
+  if (root) {
+    try {
+      artifactDir = join(root, 'docs', assertValidName(group, '分组名'), assertValidName(name, '文档名'));
+    } catch {
+      artifactDir = '';
+    }
+  }
   const mainPath = artifactDir ? join(artifactDir, 'MAIN.md') : '';
   const metaPath = artifactDir ? join(artifactDir, 'meta.yaml') : '';
 
-  if (!root || !existsSync(mainPath)) {
+  if (!root || !artifactDir || !existsSync(mainPath)) {
     return (
       <main className="flex min-h-dvh w-full flex-col items-start justify-center px-4 py-12 sm:px-6 lg:px-10">
         <h1 className="text-lg font-semibold">文档未找到</h1>
-        <p className="mt-2 break-all text-sm text-zinc-500">{root ? `路径：${artifactDir}` : '尚未在设置页配置存储目录。'}</p>
+        <p className="mt-2 break-all text-sm text-zinc-500">{root ? `路径：${artifactDir || `${group}/${name}`}` : '尚未在设置页配置存储目录。'}</p>
         <Link href="/settings" className="mt-4 inline-block text-sm underline">去设置</Link>
       </main>
     );

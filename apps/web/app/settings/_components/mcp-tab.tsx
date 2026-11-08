@@ -300,7 +300,7 @@ export function McpTab() {
               <>
                 <Field
                   label="命令"
-                  hint="PATH 里的名字，或绝对路径；npx / uvx 这类启动器还会在 ~/.local/bin、/opt/homebrew/bin 等常见目录里再找一次"
+                  hint="PATH 里的名字，或绝对路径；npx / uvx 这类启动器还会在 PATH 之外查常见安装目录（~/.local/bin、%APPDATA%\npm、/opt/homebrew/bin 等）"
                 >
                   <Input
                     value={form.command}
@@ -389,7 +389,7 @@ export function McpTab() {
               </div>
             ) : null}
             <InlineHint>
-              stdio 探针只做命令可执行性检查（PATH + ~/.local/bin、/opt/homebrew/bin 等常见目录），不启动进程；真实 MCP
+              stdio 探针只做命令可执行性检查（PATH 与各平台常见安装目录），不启动进程；真实 MCP
               initialize 在会话启动时由 pi-mcp 完成，起进程时这些目录也会补进 PATH。
             </InlineHint>
           </form>

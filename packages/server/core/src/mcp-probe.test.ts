@@ -9,16 +9,18 @@ import { probeMcp } from './mcp-probe';
 const root = mkdtempSync(join(tmpdir(), 'mcp-probe-'));
 const binDir = join(root, 'bin');
 mkdirSync(binDir);
-const uvxPath = join(binDir, 'uvx');
-writeFileSync(uvxPath, '#!/bin/sh\nexit 0\n');
-chmodSync(uvxPath, 0o755);
+// Windows 只认 PATHEXT 里的扩展名；POSIX 用可执行位
+const uvxName = process.platform === 'win32' ? 'uvx.cmd' : 'uvx';
+const uvxPath = join(binDir, uvxName);
+writeFileSync(uvxPath, process.platform === 'win32' ? '@echo off\r\nexit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+if (process.platform !== 'win32') chmodSync(uvxPath, 0o755);
 
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const uvxServer: McpServer = {
   name: 'time',
   transport: 'stdio',
-  command: 'uvx',
+  command: uvxName,
   args: ['mcp-server-time'],
   env: {},
   headers: {},

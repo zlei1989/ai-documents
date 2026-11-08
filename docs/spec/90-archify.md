@@ -145,8 +145,8 @@ Cache-Control: no-cache
 
 ## 90.9 入口与回注
 
-- `MarkdownImage` 识别 `.archify.svg`，`archify=true`；提示「右键复制图片 / 打开交互图示 / 编辑 JSON」。
-- `/workspace` 右键菜单：复制图片（PNG，SVG 自动栅格化）、加入对话上下文、打开交互图示、编辑 JSON、复制路径、复制 Markdown 引用；普通 SVG/图片只读，没有交互/结构入口，但仍可复制图片、加入对话上下文或复制路径。
+- `MarkdownImage` 识别 `.archify.svg`，`archify=true`；提示「右键复制图片 / 打印 / 打开交互图示 / 编辑 JSON」。
+- `/workspace` 右键菜单：复制图片（PNG，SVG 自动栅格化）、打印（新窗口只放这张图，加载完调起系统打印）、加入对话上下文、打开交互图示、编辑 JSON、复制路径、复制 Markdown 引用；普通 SVG/图片只读，没有交互/结构入口，但仍可复制图片、打印、加入对话上下文或复制路径。
 - `/docs` 只读：**点击 Archify 海报在新标签打开交互 viewer**（不带 `embed`，保留 Archify 自带工具栏/侧栏）；普通图片不可点，也没有右键菜单。创作页保存后递增 `imageEpoch`，海报重取。
 - marker 复用 `.aidocs/diagram-edits.json`，记录 `.archify.json` 路径；下一条消息注入提醒；`archify_save` 成功后清除。
 - 提示词要求：所有图示都用 Archify；普通 SVG 只读；改图先 read 源 JSON；不要 read/改海报 SVG；不要用 write 直接改源 JSON。

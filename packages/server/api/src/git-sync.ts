@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs';
+import { relative } from 'node:path';
 import type { GitStatus, GitSyncAction, GitSyncCommit, GitSyncResult } from '@aidocs/contracts';
 import {
   AUTO_COMMIT_EXCLUDES,
@@ -40,7 +41,9 @@ function statusOf(root: string): GitStatus {
 function assertRepoRoot(root: string): void {
   try {
     const top = git(root, ['rev-parse', '--show-toplevel']).stdout.trim();
-    if (top && realpathSync(top) === realpathSync(root)) return;
+    // realpath 之后用 relative 比较：Windows / macOS 的大小写不敏感文件系统上，
+    // git 输出 `D:/repo`、用户填 `d:\repo` 也是同一个目录
+    if (top && relative(realpathSync(top), realpathSync(root)) === '') return;
   } catch {
     /* 下面统一报错 */
   }
@@ -273,6 +276,10 @@ const PUSH_STAGE_EXCLUDES = [
   ...AUTO_COMMIT_EXCLUDES,
   ':(exclude).DS_Store',
   ':(exclude,glob)**/.DS_Store',
+  ':(exclude)Thumbs.db',
+  ':(exclude,glob)**/Thumbs.db',
+  ':(exclude)desktop.ini',
+  ':(exclude,glob)**/desktop.ini',
   ':(exclude,glob)**/.aidocs/**',
   ':(exclude,glob)**/node_modules/**',
   ':(exclude,glob)**/*.tmp-*',

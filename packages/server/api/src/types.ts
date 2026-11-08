@@ -42,6 +42,9 @@ export interface SaveTypePatch {
   prompt?: string;
 }
 
+/** 各系统自己生成的噪音文件：不进入资源树、不计数 */
+const OS_NOISE_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
+
 /* ---------------- 路径 ---------------- */
 
 function typesRoot(root: string): string {
@@ -119,7 +122,7 @@ function countFiles(dir: string): number {
   if (!existsSync(dir)) return 0;
   let count = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === '.DS_Store') continue;
+    if (OS_NOISE_FILES.has(entry.name)) continue;
     const abs = join(dir, entry.name);
     if (entry.isDirectory()) count += countFiles(abs);
     else count += 1;
@@ -206,7 +209,7 @@ export function deleteType(root: string, name: string): void {
 function walkResources(absDir: string, baseDir: string): ResourceNode[] {
   const nodes: ResourceNode[] = [];
   for (const entry of readdirSync(absDir, { withFileTypes: true })) {
-    if (entry.name === '.DS_Store' || entry.name.startsWith('.')) continue;
+    if (OS_NOISE_FILES.has(entry.name) || entry.name.startsWith('.')) continue;
     const abs = join(absDir, entry.name);
     const rel = relative(baseDir, abs).split(sep).join('/');
     if (entry.isDirectory()) {

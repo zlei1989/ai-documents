@@ -24,11 +24,13 @@ pnpm dev          # http://127.0.0.1:3084
 
 安装报 `ERR_PNPM_IGNORED_BUILDS` 时，在 `pnpm-workspace.yaml` 的 `allowBuilds` 里逐项置 `true`（pnpm 12 是 mapping，不是 list）。
 
-想用 `uvx` 启动 Python 写的 MCP 服务器（`uvx mcp-server-fetch` 之类），先装 **uv**：`brew install uv`（或 `curl -LsSf https://astral.sh/uv/install.sh | sh`，默认落在 `~/.local/bin`）。应用解析命令时会额外找 `~/.local/bin`、`/opt/homebrew/bin` 这些常见目录，并把命中的目录补进子进程的 `PATH`，所以不依赖启动应用时那份 PATH。
+想用 `uvx` 启动 Python 写的 MCP 服务器（`uvx mcp-server-fetch` 之类），先装 **uv**：macOS `brew install uv`；Windows `winget install astral-sh.uv`；Linux `curl -LsSf https://astral.sh/uv/install.sh | sh`（默认落在 `~/.local/bin`）。应用解析命令时会额外找 `~/.local/bin`、`/opt/homebrew/bin`、`%APPDATA%\npm` 这些常见目录，并把命中的目录补进子进程的 `PATH`，所以不依赖启动应用时那份 PATH。
+
+存储目录可以选任意可写位置：Windows 的盘符（`D:\我的文档`）、UNC 共享，macOS / Linux 的任意目录都行，不存在会自动创建（只拒绝把磁盘根目录当仓库）。配置在用户主目录的 `~/.aidocs/config.json`（Windows 是 `C:\Users\<你>\.aidocs\config.json`；含密钥，不进 git），文档与类型在你的 storageRoot（本身是 git 仓库，备份它即可）。
 
 首次使用三步：设置 → **模型供应商**（协议 / baseUrl / key / 模型）→ 设置 → **存储**（选目录、初始化 git）→ 设置 → **类型**（写提示词）；然后到 `/docs` 新建文档开聊。需要 AI 配图时，在「模型供应商」页最下方再配置 **火山引擎（Seedream）** 的 Base URL / API Key 并启用（参考图走同一个 Key 的 Files API，默认 1 天过期）。
 
-配置在 `~/.aidocs/config.json`（含密钥，不进 git），文档与类型在你的 storageRoot（本身是 git 仓库，备份它即可）。
+配置在 `~/.aidocs/config.json`（含密钥，不进 git），文档与类型在你的 storageRoot（本身是 git 仓库，备份它即可）。Windows / macOS / Linux 路径规则一致：路径校验用 `node:path`，不写死 POSIX 或盘符写法。
 
 ## 代码结构
 

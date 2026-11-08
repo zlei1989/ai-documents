@@ -129,7 +129,7 @@ HTTP：`GET/PUT /api/seedream`、`POST /api/seedream/test`。
 
 - 多张图拼格子（最多 3 列；单图大图）；
 - 点击打开页面级放大遮罩（Esc/点背景关闭，可新标签打开）；
-- 右键菜单：加入对话上下文（Markdown 引用进入聊天输入框上方的选区缓存）、查看大图、复制 Markdown 引用；
+- 右键菜单：打印（新窗口只放这张图）、加入对话上下文（Markdown 引用进入聊天输入框上方的选区缓存）、查看大图、复制 Markdown 引用；
 - 刷新回放：`filterReplay` 保留带 `images` 块的消息，图片文件在 `assets/images/`，刷新后仍显示。
 
 ## 错误与边界

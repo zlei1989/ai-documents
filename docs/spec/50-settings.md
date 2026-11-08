@@ -31,7 +31,8 @@
 
 ## 5.2 存储目录
 
-- 路径选择（目录选择器）+ 校验（可写、非系统目录）。
+- 路径选择（目录选择器）+ 校验（绝对路径、可写、不能是磁盘/共享根目录）。**不限制存放位置**：Windows 盘符与 UNC、macOS / Linux 任意可写目录都接受，校验只用 `node:path`，不写死 POSIX 或盘符；`~` / `~/x` 自动展开。
+- 校验失败原因按平台给示例：Windows 用 `D:\我的文档`，macOS / Linux 用 `/Users/you/我的文档`。
 - git 状态区块：是否仓库 / 当前分支 / 最近提交 / 未提交变更 / 未解决冲突数 /「初始化版本历史」按钮（未初始化时）。
 - 远端同步：显示远端名与脱敏地址、tracking ref、`↑领先 / ↓落后`；「拉取」「推送」「刷新」三个按钮，只在拉取/推送时访问网络。
   - 未配置远端时显示 `git remote add origin <url>` 提示并禁用按钮；有冲突 / 合并进行中时禁用拉取与推送。
@@ -58,9 +59,9 @@
 - 新建弹窗：stdio（command + args + env）或 http（url + headers）。
 - **启动器（launcher）**：`npx` / `uvx` / `bunx` / `pipx` / `python3 -m` 这类「先解析包、再起服务端」的命令，元数据（示例参数、安装方式、是否现下包）只在 `contracts/mcp-launcher.ts` 里写一份，设置页、「猜名字」、探针失败原因共用。
   - stdio 弹窗给「常用启动器」快捷按钮（`npx` / `uvx` / `bunx` / `pipx`）：命令空着时才填示例参数，已有参数不覆盖；选中后当场显示「要装什么」。
-  - 命令解析（`core/mcp-command.ts`）：先按 PATH，再找 `~/.local/bin`（uv / uvx / pipx）、`~/.bun/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.cargo/bin` —— Finder 启动的宿主 PATH 里没有这些目录，`uvx` 会「明明装了却找不到」。
+  - 命令解析（`core/mcp-command.ts`）：先按 PATH，再找各平台常见安装目录 —— POSIX 的 `~/.local/bin`（uv / uvx / pipx）、`~/.bun/bin`、`/opt/homebrew/bin`、`/usr/local/bin`、`~/.cargo/bin`；Windows 的 `%APPDATA%\npm`、`%LOCALAPPDATA%\pnpm`、`~/scoop/shims` 等。Windows 上按 `PATHEXT` 匹配 `.exe` / `.cmd` / `.bat`，PATH 变量名大小写不敏感（`Path` 也认）。Finder / 桌面图标启动的宿主 PATH 里没有这些目录，`uvx` 会「明明装了却找不到」。
   - 探针与注入**共用同一份解析**：探针绿了、会话里起不来的假成功是这里最贵的 bug。起 stdio 子进程时把解析到的目录补进 `PATH`（用户写的 env 原样保留），因为 pi 的 stdio 传输是 `{ ...process.env, ...config.env }`。
-  - 失败原因分两类：已知启动器直说缺什么（`uvx` ⇒ 先装 uv：`brew install uv`），未知命令才回落到「请检查 PATH，或填写绝对路径」；探针仍然只查可执行性、不启动进程。
+  - 失败原因分两类：已知启动器直说缺什么（`uvx` ⇒ 先装 uv：Windows `winget install astral-sh.uv` / macOS `brew install uv` / Linux `curl -LsSf https://astral.sh/uv/install.sh | sh`），未知命令才回落到「请检查 PATH，或填写绝对路径」；探针仍然只查可执行性、不启动进程。
   - 导入时「猜名字」按包名：`mcp-server-fetch` / `mcp_server_time` ⇒ `fetch` / `time`（剥 `mcp-` / `server-` 前缀，连字符与下划线都认）；`--from` / `--python` 这类选项的取值不参与猜名字。
 - 「测试连接」探针：四态（未测 / 连接中 / 成功 + 工具数 / 失败 + 原因）。
 - **粘贴 JSON 导入**（多方言，先预览后落盘）：

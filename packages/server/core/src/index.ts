@@ -16,3 +16,4 @@ export * from './config-store';
 export * from './revision';
 export * from './diagram';
 export * from './diagram-edits';
+export * from './testing';

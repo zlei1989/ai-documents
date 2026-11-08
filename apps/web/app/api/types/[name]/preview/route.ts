@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
 import { TypeManifestSchema } from '@aidocs/contracts';
-import { ServiceError, resolveResearchConfig, resolveSeedreamConfig, resolveStorageRoot } from '@aidocs/api';
+import { ServiceError, assertValidName, resolveResearchConfig, resolveSeedreamConfig, resolveStorageRoot } from '@aidocs/api';
 import { buildPromptPreview, type PromptPreview } from '@aidocs/agents';
 import { readConfig } from '@aidocs/core';
 import { readJson, route, validate } from '../../../_lib/http';
@@ -48,7 +48,8 @@ function resolveCwd(root: string, doc: string | undefined): string {
   if (!doc) return fallbackCwd();
   const docsRoot = resolve(root, 'docs');
   const target = resolve(docsRoot, doc);
-  if (target === docsRoot || !target.startsWith(docsRoot + sep)) {
+  const rel = relative(docsRoot, target);
+  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) {
     throw new ServiceError('VALIDATION', 'doc 参数不合法');
   }
   return existsSync(target) ? target : fallbackCwd();
@@ -64,8 +65,10 @@ export async function POST(request: Request, context: Context) {
     const body = validate(PreviewBody, await readJson(request));
 
     const root = resolveStorageRoot();
-    const typeDir = join(root, 'types', name);
-    if (!existsSync(typeDir)) throw new ServiceError('NOT_FOUND', `类型不存在：${name}`);
+    // 类型名来自 URL：与 CRUD 同一套校验，避免 `..` 把 typeDir 带出 storageRoot
+    const typeName = assertValidName(name, '类型名');
+    const typeDir = join(root, 'types', typeName);
+    if (!existsSync(typeDir)) throw new ServiceError('NOT_FOUND', `类型不存在：${typeName}`);
 
     const cwd = resolveCwd(root, body.doc);
     const config = readConfig();

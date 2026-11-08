@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { removeDirSync } from '@aidocs/core';
 import { DELETE as deleteProvider, GET as getProviders, POST as postProvider, PUT as putProvider } from '../app/api/providers/route';
 import { POST as importModelsRoute } from '../app/api/providers/[id]/models/import/route';
 import { DELETE as deleteModelRoute, PUT as saveModelRoute } from '../app/api/providers/[id]/models/route';
@@ -33,7 +34,7 @@ beforeEach(() => {
 afterEach(() => {
   env.restore();
   vi.unstubAllGlobals();
-  rmSync(tmpRoot, { recursive: true, force: true });
+  removeDirSync(tmpRoot);
 });
 
 const providerInput = {
@@ -192,15 +193,15 @@ describe('路由：设置与存储', () => {
     expect((await readJson<{ error: string }>(bad)).error).toContain('thinkingLevel');
   });
 
-  it('PUT storageRoot 走校验；非法路径 400', async () => {
+  it('PUT storageRoot 走校验；相对路径 400，绝对路径不再限制位置', async () => {
     const target = join(tmpRoot, '我的文档');
     const ok = await putSettings(jsonRequest('http://localhost/api/settings', { storageRoot: target }, 'PUT'));
     expect(ok.status).toBe(200);
     expect((await readJson<{ storage: { storageRoot: string } }>(ok)).storage.storageRoot).toBe(target);
 
-    const bad = await putSettings(jsonRequest('http://localhost/api/settings', { storageRoot: '/System/foo' }, 'PUT'));
+    const bad = await putSettings(jsonRequest('http://localhost/api/settings', { storageRoot: 'relative/dir' }, 'PUT'));
     expect(bad.status).toBe(400);
-    expect((await readJson<{ error: string }>(bad)).error).toContain('系统目录');
+    expect((await readJson<{ error: string }>(bad)).error).toContain('绝对路径');
   });
 
   it('POST /api/storage/init 初始化 git，重复调用幂等', async () => {

@@ -6,5 +6,8 @@ export default defineConfig({
   test: {
     include: ['packages/**/src/**/*.test.ts', 'apps/**/*.test.ts'],
     environment: 'node',
+    // git 相关的用例在 Windows 上要起多次 git.exe、写临时仓库，5s 默认值不够
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

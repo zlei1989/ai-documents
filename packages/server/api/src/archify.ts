@@ -1,4 +1,5 @@
 import { lstatSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   ArchifyError,
   ARCHIFY_PREVIEW_ROOT,
@@ -254,7 +255,7 @@ export function getArchifyPreviewHtml(
   if (!new RegExp(`^${ARCHIFY_PREVIEW_ROOT.replace('.', '\\.')}/[a-f0-9]{64}\\.html$`).test(normalized)) {
     throw new ServiceError('VALIDATION', 'Archify 预览路径不合法');
   }
-  const target = assertInside(artifact.dir, `${artifact.dir}/${normalized}`);
+  const target = assertInside(artifact.dir, join(artifact.dir, normalized));
   try {
     const info = lstatSync(target);
     if (info.isSymbolicLink()) throw new ServiceError('VALIDATION', 'Archify 预览不能是符号链接');

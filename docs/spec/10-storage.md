@@ -32,7 +32,7 @@
 **约定**
 - 目录名即显示名（重命名 = 目录改名 + git mv）；不引入 UUID 作为主键，路径即可寻址。
 - `types/<typeName>` 与 `docs/<group>/<artifact>` 内部一律 UTF-8、LF（git 侧 `core.autocrlf=false`）。
-- `.aidocs/` 与常见噪音（`.DS_Store`、`node_modules`）进 storageRoot 的 `.gitignore` 模板。
+- `.aidocs/` 与常见噪音（`.DS_Store`、`Thumbs.db`、`desktop.ini`、`node_modules`）进 storageRoot 的 `.gitignore` 模板。
 - `sessions/.index.json` 是会话清单与当前会话（`activeId`）的唯一真相源：新建空会话在发第一条消息前没有 pi 文件，也靠它出现在列表里。首次打开旧文档时从 `sessions/*.jsonl` 盘点并补写索引。
 - 会话 id 由应用生成（`s-<时间戳>-<随机>`）或沿用旧 pi 文件头里的 uuid；只允许 `[A-Za-z0-9._-]`，禁止把索引里的字符串直接拼进路径。
 - Archify 图放 `assets/diagrams/<slug>.archify.json`（源）+ `<slug>.archify.svg`（海报，Markdown 引用），HTML viewer、实时预览落 `.aidocs/archify/`。普通 SVG/图片只读展示。`meta.updatedAt` 在保存后刷新，但编辑保存本身不立即 git commit（与 `saveMain` 一致，下一轮 AI 结束的自动提交会纳入）。
@@ -87,5 +87,5 @@ createdAt: 2026-05-01T10:00:00Z
 
 ## 敏感文件
 
-- 全局配置在应用配置目录（如 `~/.aidocs/config.json`），**不在 storageRoot 内**；API key 落盘 `chmod 0600`，下行一律掩码。
+- 全局配置在应用配置目录（macOS / Linux 是 `~/.aidocs/config.json`，Windows 是 `C:\Users\<你>\.aidocs\config.json`），**不在 storageRoot 内**；API key 落盘 `chmod 0600`（Windows 上由用户目录 ACL 保护），下行一律掩码。
 - storageRoot 只放用户内容，永不含 key。

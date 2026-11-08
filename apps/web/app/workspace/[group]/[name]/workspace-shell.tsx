@@ -2,7 +2,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowUp, Check, GitBranch, MessageSquare, SquarePen, Type, X } from 'lucide-react';
+import { ArrowUp, Check, GitBranch, MessageSquare, Printer, SquarePen, Type, X } from 'lucide-react';
 import type { GeneratedImage, GitCommit, Selection } from '@aidocs/contracts';
 import { httpJson } from '@aidocs/base';
 import { Badge, Button, buttonVariants, ChatPanel, cn } from '@aidocs/ui';
@@ -11,6 +11,8 @@ import { typeEditorHref } from '../../../_lib/doc-nav';
 import { settingsTabHref } from '../../../_lib/settings-tabs';
 import { archifySourcePath, archifyViewUrl, assetUrl, diagramMarkdownRef, docBase, normalizeAssetPath } from '../../../_lib/asset-url';
 import { canCopyImageToClipboard, copyImageToClipboard } from '../../../_lib/clipboard-image';
+import { printArticle } from '../../../_lib/print-article';
+import { printImage as openImagePrintWindow } from '../../../_lib/print-image';
 import { MarkdownPreview, type MarkdownImageInfo } from '../../../docs/markdown';
 import { ArchifyEditor } from './archify-editor';
 import { DocFilesPanel } from './doc-files-panel';
@@ -228,6 +230,24 @@ export function WorkspaceShell({
     }
   }
 
+  /** 右键「打印」：新窗口只放这一张图，加载完调起系统打印；被弹窗拦截时提示 */
+  function printImage(url: string, alt: string): void {
+    if (!openImagePrintWindow(url, alt)) {
+      flashSelectionToast('打印窗口被浏览器拦截，请允许本站弹窗后重试', 'error');
+    }
+  }
+
+  /** 顶栏「打印」：把当前正文（含图片、表格、图示）克隆到独立窗口后调起系统打印 */
+  function printCurrentArticle(): void {
+    if (!previewRef.current) {
+      flashSelectionToast('正文还没渲染完，请稍后再试', 'error');
+      return;
+    }
+    if (!printArticle(previewRef.current, `${group} / ${name}`)) {
+      flashSelectionToast('打印窗口被浏览器拦截，请允许本站弹窗后重试', 'error');
+    }
+  }
+
   function startEditingSource(): void {
     setDraft(text);
     setSourceError(null);
@@ -406,6 +426,10 @@ export function WorkspaceShell({
             <Button variant="ghost" onClick={() => setGitOpen(true)}>
               <GitBranch className="h-3.5 w-3.5" aria-hidden="true" />
               版本
+            </Button>
+            <Button variant="ghost" onClick={printCurrentArticle} title="打印整篇文章（含图示与表格）">
+              <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+              打印
             </Button>
             <Button variant="ghost" onClick={startEditingSource}>
               <SquarePen className="h-3.5 w-3.5" aria-hidden="true" />
@@ -614,6 +638,11 @@ export function WorkspaceShell({
                 ]
               : []),
             {
+              label: '打印',
+              onSelect: () =>
+                printImage(assetUrl(docBase(group, name), imageMenu.info.path, imageEpoch), imageMenu.info.alt),
+            },
+            {
               label: '加入对话上下文',
               onSelect: () =>
                 addSelection(diagramMarkdownRef(imageMenu.info.alt, imageMenu.info.path), {
@@ -677,6 +706,11 @@ export function WorkspaceShell({
                   },
                 ]
               : []),
+            {
+              label: '打印',
+              onSelect: () =>
+                printImage(resolveChatImageUrl(chatImageMenu.image.path), chatImageMenu.image.alt),
+            },
             {
               label: '加入对话上下文',
               onSelect: () =>

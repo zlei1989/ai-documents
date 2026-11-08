@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export class PathEscapeError extends Error {
@@ -41,6 +41,33 @@ function realpathPrefix(target: string): string {
   return join(realpathSync(existing), ...missing);
 }
 
+/** 同步小睡：Windows 上 rename 偶尔被索引器/杀毒短暂占用，重试前让出一下 */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Windows 的 rename 可能瞬时 EPERM/EBUSY（目标文件正被杀毒/索引器打开）；短暂重试 */
+function renameOverwrite(tmp: string, file: string): void {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      renameSync(tmp, file);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const retryable = code === 'EPERM' || code === 'EACCES' || code === 'EBUSY';
+      if (!retryable || attempt >= 4) {
+        try {
+          unlinkSync(tmp);
+        } catch {
+          /* 清理失败不掩盖原错误 */
+        }
+        throw error;
+      }
+      sleepSync(20 * (attempt + 1));
+    }
+  }
+}
+
 /** 原子写文本：临时文件 + rename，容忍并发读者 */
 export function atomicWrite(file: string, data: string, opts: { mode?: number } = {}): void {
   atomicWriteBuffer(file, Buffer.from(data, 'utf8'), opts);
@@ -51,5 +78,5 @@ export function atomicWriteBuffer(file: string, data: Buffer | Uint8Array, opts:
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmp, data, { mode: opts.mode });
-  renameSync(tmp, file);
+  renameOverwrite(tmp, file);
 }

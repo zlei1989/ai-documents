@@ -103,8 +103,8 @@ function MarkdownImage({
   const archify = path.toLowerCase().endsWith('.archify.svg');
   const hint = onImageContextMenu
     ? archify
-      ? '右键复制图片 / 打开交互图示 / 编辑 JSON'
-      : '右键复制图片'
+      ? '右键复制图片 / 打印 / 打开交互图示 / 编辑 JSON'
+      : '右键复制图片 / 打印'
     : undefined;
   // 海报只读；点击在新标签打开同一张图的交互版
   const viewerHref = archify && openArchifyOnClick && assetBase ? archifyPosterViewUrl(assetBase, path) : null;

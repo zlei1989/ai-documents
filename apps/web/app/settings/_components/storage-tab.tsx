@@ -116,12 +116,15 @@ export function StorageTab() {
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Field label="路径" hint="必须写绝对路径；允许用户主目录子目录、/Volumes 或临时目录">
+          <Field
+            label="路径"
+            hint="必须写绝对路径；Windows 例如 D:\我的文档，macOS/Linux 例如 /Users/you/我的文档；位置不限，不存在会自动创建"
+          >
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 value={pathInput}
                 onChange={(event) => setPathInput(event.target.value)}
-                placeholder="/Users/you/Documents/我的文档"
+                placeholder="D:\我的文档 或 /Users/you/我的文档"
                 spellCheck={false}
                 className="font-mono text-xs"
               />

@@ -16,7 +16,8 @@ export function scanSkills(dir: string, origin: 'personal' | 'project'): SkillRe
       continue;
     }
     const raw = readFileSync(file, 'utf8');
-    const front = /^---\n([\s\S]*?)\n---/.exec(raw)?.[1];
+    // 兼容 Windows 编辑器写出的 CRLF frontmatter
+    const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw)?.[1];
     let meta: Record<string, unknown> = {};
     try {
       meta = (front ? parseYaml(front) : {}) ?? {};

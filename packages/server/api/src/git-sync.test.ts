@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { git, initRepo } from '@aidocs/core';
+import { git, initRepo, removeDirSync } from '@aidocs/core';
 import { abortCurrentMerge, groupChangedPaths, startCurrentRepair, syncStorage } from './git-sync';
 import { commitPathAsync, setStorageRoot } from './storage';
 import { isolateConfigDir } from './test-utils';
@@ -47,7 +47,7 @@ beforeEach(() => {
 
 afterEach(() => {
   env.restore();
-  rmSync(base, { recursive: true, force: true });
+  removeDirSync(base);
 });
 
 describe('推送前按文件夹归组', () => {

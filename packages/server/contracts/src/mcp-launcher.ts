@@ -16,7 +16,7 @@ export interface McpLauncher {
   bin: string;
   /** 简短中文说明，用在提示里 */
   label: string;
-  /** 缺失时给用户的一条安装指引（macOS 优先） */
+  /** 缺失时给用户的一条安装指引（按 Windows / macOS / Linux 三种写法） */
   install: string;
   /** 设置页「快捷」按钮填的示例参数 */
   exampleArgs: readonly string[];
@@ -29,27 +29,30 @@ export const MCP_LAUNCHERS: readonly McpLauncher[] = [
     bin: 'npx',
     label: 'Node 包启动器',
     install: 'npx 随 Node 提供（需要 Node ≥ 22.19）',
-    exampleArgs: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'],
+    exampleArgs: ['-y', '@modelcontextprotocol/server-filesystem', '.'],
     downloads: true,
   },
   {
     bin: 'uvx',
     label: 'uv 的 Python 包启动器',
-    install: '先装 uv：brew install uv（或 curl -LsSf https://astral.sh/uv/install.sh | sh），装完在 ~/.local/bin',
+    install:
+      '先装 uv：Windows 用 winget install astral-sh.uv，macOS 用 brew install uv，Linux 用 curl -LsSf https://astral.sh/uv/install.sh | sh；装完在 ~/.local/bin（Windows 是 %USERPROFILE%\\.local\\bin）',
     exampleArgs: ['mcp-server-fetch'],
     downloads: true,
   },
   {
     bin: 'bunx',
     label: 'Bun 包启动器',
-    install: '先装 bun：brew install bun',
-    exampleArgs: ['@modelcontextprotocol/server-filesystem', '/tmp'],
+    install:
+      '先装 bun：Windows 用 winget install Oven-sh.Bun，macOS 用 brew install bun，Linux 用 curl -fsSL https://bun.sh/install | bash',
+    exampleArgs: ['@modelcontextprotocol/server-filesystem', '.'],
     downloads: true,
   },
   {
     bin: 'pipx',
     label: 'pipx 的 Python 应用启动器',
-    install: '先装 pipx：brew install pipx',
+    install:
+      '先装 pipx：Windows 用 py -m pip install --user pipx，macOS 用 brew install pipx，Linux 用 python3 -m pip install --user pipx',
     exampleArgs: ['run', 'mcp-server-fetch'],
     downloads: true,
   },

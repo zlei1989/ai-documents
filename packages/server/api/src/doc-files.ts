@@ -10,6 +10,9 @@ import { ServiceError } from './service-error';
 const MAX_LIST_ENTRIES = 2000;
 /** 目录最多递归多少层 */
 const MAX_LIST_DEPTH = 12;
+/** 各系统自己生成的噪音文件：不进入文档文件树 */
+const OS_NOISE_FILES = new Set(['.DS_Store', 'Thumbs.db', 'desktop.ini']);
+
 /** 文本预览最多读取多少字节 */
 const MAX_PREVIEW_BYTES = 256 * 1024;
 
@@ -134,7 +137,7 @@ function walkDocDir(dir: string, baseDir: string, depth: number, state: WalkStat
       state.truncated = true;
       break;
     }
-    if (entry.name === '.DS_Store' || entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
+    if (OS_NOISE_FILES.has(entry.name) || entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
 
     const abs = join(dir, entry.name);
     const rel = relative(baseDir, abs).split(sep).join('/');

@@ -17,6 +17,8 @@ export const EMPTY_GIT_STATUS: GitStatus = {
 const GITIGNORE = [
   '# 我的文档',
   '.DS_Store',
+  'Thumbs.db',
+  'desktop.ini',
   'node_modules/',
   '.aidocs/',
   '**/sessions/ui.jsonl',

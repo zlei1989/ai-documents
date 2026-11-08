@@ -35,6 +35,17 @@ function writeAsset(content: string, rel = 'diagrams/a.svg'): void {
   writeFileSync(file, content);
 }
 
+/** Windows 默认策略不允许创建符号链接（需要开发者模式/管理员）；建不了就跳过相关断言 */
+function symlinkIfSupported(target: string, path: string): boolean {
+  try {
+    symlinkSync(target, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return false;
+    throw error;
+  }
+}
+
 describe('assets api（只读）', () => {
   it('普通 SVG 只读展示：保留 class/style，移除脚本/外链', () => {
     writeAsset(
@@ -70,8 +81,9 @@ describe('assets api（只读）', () => {
 
     writeAsset(SVG);
     const link = assetPath('diagrams/link.svg');
-    symlinkSync(assetPath('diagrams/a.svg'), link);
-    expect(() => resolveAssetFile(resolveArtifact(root, '分组', '文档'), 'diagrams/link.svg')).toThrow(ServiceError);
+    if (symlinkIfSupported(assetPath('diagrams/a.svg'), link)) {
+      expect(() => resolveAssetFile(resolveArtifact(root, '分组', '文档'), 'diagrams/link.svg')).toThrow(ServiceError);
+    }
   });
 
   it('缺失/超大资源被拒绝', () => {

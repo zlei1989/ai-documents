@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -36,6 +36,17 @@ function flatten(nodes: DocFileNode[], out = new Map<string, DocFileNode>()): Ma
     if (node.children) flatten(node.children, out);
   }
   return out;
+}
+
+/** Windows 默认策略不允许创建符号链接（需要开发者模式/管理员）；建不了就跳过相关断言 */
+function symlinkIfSupported(target: string, path: string): boolean {
+  try {
+    symlinkSync(target, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') return false;
+    throw error;
+  }
 }
 
 describe('doc-files 列表', () => {
@@ -80,7 +91,7 @@ describe('doc-files 列表', () => {
   });
 
   it('符号链接不进入树', () => {
-    symlinkSync(join(dir, 'MAIN.md'), join(dir, 'main-link.md'));
+    if (!symlinkIfSupported(join(dir, 'MAIN.md'), join(dir, 'main-link.md'))) return;
     const nodes = flatten(listDocFiles(root, GROUP, NAME).entries);
     expect(nodes.has('main-link.md')).toBe(false);
   });
@@ -128,8 +139,10 @@ describe('doc-files 预览', () => {
     expect(() => readDocFile(root, GROUP, NAME, 'assets')).toThrow(/文件夹/);
     expect(() => readDocFile(root, GROUP, NAME, 'missing.md')).toThrow(/不存在/);
 
-    symlinkSync(join(dir, 'MAIN.md'), join(dir, 'main-link.md'));
-    expect(() => readDocFile(root, GROUP, NAME, 'main-link.md')).toThrow(/符号链接/);
+    symlinkIfSupported(join(dir, 'MAIN.md'), join(dir, 'main-link.md'));
+    if (existsSync(join(dir, 'main-link.md'))) {
+      expect(() => readDocFile(root, GROUP, NAME, 'main-link.md')).toThrow(/符号链接/);
+    }
   });
 
   it('空文本文件返回空串', () => {

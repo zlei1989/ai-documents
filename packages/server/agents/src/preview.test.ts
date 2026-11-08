@@ -65,7 +65,8 @@ describe('buildPromptPreview', () => {
       expect(preview.systemPrompt).toContain('- .aidocs/type/arch.md\n</addendum>');
       // cwd 段
       expect(preview.systemPrompt).toContain('<cwd>');
-      expect(preview.systemPrompt).toContain(cwd);
+      // pi 会把 cwd 统一成正斜杠（Windows 的 `C:\x` 在提示词里是 `C:/x`）
+      expect(preview.systemPrompt).toContain(cwd.replace(/\\/g, '/'));
 
       expect(preview.chars).toBe(preview.systemPrompt.length);
       expect(preview.tools).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'ls', 'grep', 'archify_guidelines', 'archify_save']));

@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { assertInsideRoot, commitPathAsync, initStorage, resolveStorageRoot, storageStatus } from './storage';
-import { git, initRepo } from '@aidocs/core';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { expandHomePath, git, initRepo, removeDirSync, resolveStoragePath, validateStorageRoot } from '@aidocs/core';
+import { homedir, tmpdir } from 'node:os';
+import { join, parse } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getSettings } from './settings';
 import { getStorageState, initStorageGit, setStorageRoot } from './storage';
@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   env.restore();
-  for (const dir of cleanupDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  for (const dir of cleanupDirs.splice(0)) removeDirSync(dir);
 });
 
 function codeOf(fn: () => unknown): string {
@@ -52,12 +52,43 @@ describe('存储目录', () => {
     });
   });
 
-  it('拒绝相对路径、根目录与系统目录', () => {
+  it('拒绝相对路径与磁盘根目录', () => {
     expect(() => setStorageRoot('relative/dir')).toThrowError(/绝对路径/);
     expect(codeOf(() => setStorageRoot('relative/dir'))).toBe('VALIDATION');
-    expect(() => setStorageRoot('/')).toThrowError(/系统目录|允许/);
-    expect(() => setStorageRoot('/System/foo')).toThrowError(/系统目录/);
-    expect(() => setStorageRoot('/usr/local/mydocs')).toThrowError(/系统目录/);
+    const volumeRoot = parse(process.cwd()).root;
+    expect(() => setStorageRoot(volumeRoot)).toThrowError(/磁盘根目录/);
+  });
+
+  it('不限制存放位置：任意盘符/目录都可以（只要可写）', () => {
+    const dir = join(tmpRoot, '任意位置', '我的文档');
+    const state = setStorageRoot(dir);
+    expect(state.storageRoot).toBe(dir);
+    expect(existsSync(dir)).toBe(true);
+    // 直接校验也接受另一个新目录
+    const other = join(tmpRoot, 'another', 'place');
+    expect(validateStorageRoot(other)).toBe(other);
+  });
+
+  it('支持 ~ 与 ~/xxx 展开到用户主目录', () => {
+    expect(expandHomePath('~')).toBe(homedir());
+    expect(expandHomePath('~/文档')).toBe(join(homedir(), '文档'));
+    expect(expandHomePath('/absolute/path')).toBe('/absolute/path');
+  });
+
+  it('按平台识别绝对路径：不设白名单，Windows 盘符 / UNC 与 POSIX 任意目录都行', () => {
+    if (process.platform === 'win32') {
+      expect(resolveStoragePath('d:\\.tmp\\a')).toBe('d:\\.tmp\\a');
+      expect(resolveStoragePath('D:/data/我的文档')).toBe('D:\\data\\我的文档');
+      expect(resolveStoragePath('\\\\server\\share\\docs')).toBe('\\\\server\\share\\docs');
+      expect(() => resolveStoragePath('D:')).toThrowError(/绝对路径/);
+      expect(() => resolveStoragePath('D:\\')).toThrowError(/磁盘根目录/);
+    } else {
+      expect(resolveStoragePath('/opt/aidocs')).toBe('/opt/aidocs');
+      expect(resolveStoragePath('/mnt/data/我的文档')).toBe('/mnt/data/我的文档');
+      expect(resolveStoragePath('/Volumes/外置盘/docs')).toBe('/Volumes/外置盘/docs');
+      expect(() => resolveStoragePath('/')).toThrowError(/磁盘根目录/);
+      expect(() => resolveStoragePath('C:\\docs')).toThrowError(/绝对路径/);
+    }
   });
 
   it('接受临时目录下的新目录（自动创建）并落盘', () => {
@@ -70,20 +101,22 @@ describe('存储目录', () => {
     expect(getStorageState().storageRoot).toBe(dir);
   });
 
-  it('拒绝文件路径与不可写目录', () => {
+  it('拒绝文件路径', () => {
     const file = join(tmpRoot, 'not-a-dir.txt');
     writeFileSync(file, 'x');
     expect(() => setStorageRoot(file)).toThrowError(/不是目录/);
+  });
 
-    if (process.getuid?.() !== 0) {
-      const readOnly = join(tmpRoot, 'readonly');
-      mkdirSync(readOnly);
-      chmodSync(readOnly, 0o555);
-      try {
-        expect(() => setStorageRoot(join(readOnly, 'sub'))).toThrowError(/不可写/);
-      } finally {
-        chmodSync(readOnly, 0o755);
-      }
+  // Windows 的 chmod 不产生只读目录语义，这条只在 POSIX 上有意义
+  it.skipIf(process.platform === 'win32')('拒绝不可写目录', () => {
+    if (process.getuid?.() === 0) return;
+    const readOnly = join(tmpRoot, 'readonly');
+    mkdirSync(readOnly);
+    chmodSync(readOnly, 0o555);
+    try {
+      expect(() => setStorageRoot(join(readOnly, 'sub'))).toThrowError(/不可写/);
+    } finally {
+      chmodSync(readOnly, 0o755);
     }
   });
 

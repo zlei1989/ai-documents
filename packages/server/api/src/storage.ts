@@ -34,6 +34,8 @@ export interface StorageStatus {
 const GITIGNORE_HEADER = '# 我的文档';
 const GITIGNORE_RULES = [
   '.DS_Store',
+  'Thumbs.db',
+  'desktop.ini',
   'node_modules/',
   '.trash/',
   '.aidocs/',
@@ -53,14 +55,22 @@ export function resolveStorageRoot(): string {
   return resolve(root);
 }
 
+/** Windows 设备名：这些名字（含 `CON.md` 这类带扩展名的写法）在 Windows 上不能作为文件/目录名 */
+const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/i;
+/** Windows 文件名里不允许的字符；仓库要能在三端打开，所以在所有平台上都拦掉 */
+const WINDOWS_INVALID_CHARS = /[<>:"|?*]/;
+
 /** 名称即目录名（允许中文）；拒绝路径分隔符、穿越片段与隐藏目录 */
 export function assertValidName(name: string, kind = '名称'): string {
   const trimmed = name.trim();
   if (!trimmed) throw new ServiceError('VALIDATION', `${kind}不能为空`);
   if (trimmed !== name) throw new ServiceError('VALIDATION', `${kind}首尾不能有空白`);
   if (/[/\\\u0000-\u001f]/.test(trimmed)) throw new ServiceError('VALIDATION', `${kind}不能包含路径分隔符或控制字符`);
+  if (WINDOWS_INVALID_CHARS.test(trimmed)) throw new ServiceError('VALIDATION', `${kind}不能包含 < > : " | ? * 这些字符`);
   if (trimmed === '.' || trimmed === '..') throw new ServiceError('VALIDATION', `${kind}不合法`);
   if (trimmed.startsWith('.')) throw new ServiceError('VALIDATION', `${kind}不能以 . 开头`);
+  if (/[. ]$/.test(trimmed)) throw new ServiceError('VALIDATION', `${kind}不能以点或空格结尾（Windows 会去掉）`);
+  if (WINDOWS_RESERVED_NAMES.test(trimmed)) throw new ServiceError('VALIDATION', `${kind}不能使用 Windows 保留名：${trimmed}`);
   if (trimmed.length > 80) throw new ServiceError('VALIDATION', `${kind}过长（最多 80 字）`);
   return trimmed;
 }
